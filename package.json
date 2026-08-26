@@ -1,0 +1,42 @@
+{
+  "name": "remotehub-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform SSH, SFTP and database workbench",
+  "main": "dist-electron/main/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "pnpm build && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "vite build && tsc -p tsconfig.node.json",
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "lint": "eslint . --ext .ts,.vue --ignore-pattern dist --ignore-pattern dist-electron",
+    "test": "vitest run",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@codemirror/lang-sql": "^6.8.0",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "better-sqlite3": "^11.8.1",
+    "codemirror": "^6.0.1",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "electron": "^34.0.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-vue": "^10.0.0",
+    "typescript-eslint": "^8.19.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8",
+    "vue-tsc": "^2.2.0",
+    "wait-on": "^8.0.1"
+  }
+}
