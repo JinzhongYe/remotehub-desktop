@@ -23,7 +23,7 @@ npm run dev
 
 `npm run dev` 会先生成 Electron 主进程产物，再启动 Vite 和桌面窗口。关闭窗口即可结束本地开发进程。项目不要求预装 pnpm。
 
-Windows 也可以双击 `start.bat`；它会检查 Node.js / pnpm，首次运行时自动安装依赖。
+Windows 也可以双击 `start.bat`；它会检查 Node.js / npm，首次运行时自动安装依赖。
 
 ## 校验与构建
 
@@ -35,7 +35,7 @@ npm run build
 npm start
 ```
 
-`pnpm build` 生成：
+`npm run build` 生成：
 
 - `dist/`：Vue 渲染进程静态资源
 - `dist-electron/`：Electron Main / preload 编译产物
