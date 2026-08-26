@@ -17,22 +17,22 @@ Phase 0 不会建立 SSH、SFTP 或数据库网络连接，也不会保存密码
 在本目录执行：
 
 ```powershell
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
-`pnpm dev` 会先生成 Electron 主进程产物，再启动 Vite 和桌面窗口。关闭窗口即可结束本地开发进程。
+`npm run dev` 会先生成 Electron 主进程产物，再启动 Vite 和桌面窗口。关闭窗口即可结束本地开发进程。项目不要求预装 pnpm。
 
 Windows 也可以双击 `start.bat`；它会检查 Node.js / pnpm，首次运行时自动安装依赖。
 
 ## 校验与构建
 
 ```powershell
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm build
-pnpm start
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm start
 ```
 
 `pnpm build` 生成：

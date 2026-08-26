@@ -6,7 +6,7 @@
   "main": "dist-electron/main/index.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "pnpm build && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "dev": "npm run build && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "vite build && tsc -p tsconfig.node.json",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "lint": "eslint . --ext .ts,.vue --ignore-pattern dist --ignore-pattern dist-electron",
