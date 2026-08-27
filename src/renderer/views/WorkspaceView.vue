@@ -13,6 +13,9 @@ const connectionStore = useConnectionStore()
 const workspace = useWorkspaceStore()
 const dialogOpen = ref(false)
 const editing = ref<Connection | null>(null)
+const groupDialogOpen = ref(false)
+const editingGroup = ref<Group | null>(null)
+const groupName = ref('')
 const appInfo = ref<{ name: string; version: string; platform: string; dataPath: string } | null>(null)
 type MessageKey = Parameters<typeof t>[0]
 const statusKey = ref<MessageKey>('initializing')
@@ -117,14 +120,28 @@ async function moveConnection(id: string, beforeId?: string, groupId?: string): 
   }
 }
 
-async function createGroup(): Promise<void> {
-  const name = window.prompt(t('groupName'))?.trim()
-  if (name) try { await connectionStore.saveGroup(name) } catch (error) { setError(error, 'saveFailed') }
+function createGroup(): void {
+  editingGroup.value = null
+  groupName.value = ''
+  groupDialogOpen.value = true
 }
 
-async function editGroup(group: Group): Promise<void> {
-  const name = window.prompt(t('renameGroupPrompt'), group.name)?.trim()
-  if (name) try { await connectionStore.saveGroup(name, group.id) } catch (error) { setError(error, 'saveFailed') }
+function editGroup(group: Group): void {
+  editingGroup.value = group
+  groupName.value = group.name
+  groupDialogOpen.value = true
+}
+
+async function saveGroup(): Promise<void> {
+  const name = groupName.value.trim()
+  if (!name) return
+  try {
+    await connectionStore.saveGroup(name, editingGroup.value?.id)
+    groupDialogOpen.value = false
+    setStatus('saved')
+  } catch (error) {
+    setError(error, 'saveFailed')
+  }
 }
 
 async function removeGroup(group: Group): Promise<void> {
@@ -145,5 +162,12 @@ async function removeGroup(group: Group): Promise<void> {
     </div>
     <footer class="status-bar"><span class="status-item"><span class="status-dot"></span>{{ statusText }}</span><span class="status-item">{{ appInfo?.platform || 'desktop' }} · {{ t('localOnly') }}</span><span class="status-item version">{{ appInfo?.version ? `v${appInfo.version}` : 'v0.1.0' }}</span></footer>
     <ConnectionDialog :open="dialogOpen" :connection="editing" :groups="connectionStore.groups" @close="dialogOpen = false" @save="saveConnection" />
+    <div v-if="groupDialogOpen" class="modal-layer" @click.self="groupDialogOpen = false">
+      <form class="connection-dialog" @submit.prevent="saveGroup">
+        <div class="dialog-heading"><div><span class="eyebrow">{{ t('group') }}</span><h2>{{ editingGroup ? t('renameGroup') : t('newGroup') }}</h2></div><button type="button" class="icon-button" :aria-label="t('cancel')" @click="groupDialogOpen = false">×</button></div>
+        <label class="field"><span>{{ t('groupName') }}</span><input v-model="groupName" required maxlength="80" autofocus></label>
+        <div class="dialog-actions"><button type="button" class="button secondary" @click="groupDialogOpen = false">{{ t('cancel') }}</button><button type="submit" class="button primary">{{ editingGroup ? t('renameGroup') : t('newGroup') }}</button></div>
+      </form>
+    </div>
   </div>
 </template>

@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import type { Connection } from '../../shared/types'
-import type { SshConnectResult, SshDataEvent, SshStatusEvent } from '../../shared/ssh'
+import { sshErrorCode, type SshConnectResult, type SshDataEvent, type SshStatusEvent } from '../../shared/ssh'
 import { CredentialService } from './credentials'
 import { appError } from './storage'
 
@@ -149,13 +149,10 @@ export class SshService {
 }
 
 function toSshError(error: unknown): Error & { code: string } {
-  const source = error as NodeJS.ErrnoException | undefined
-  const code = source?.code === 'ETIMEDOUT'
-    ? 'SSH_TIMEOUT'
-    : source?.code === 'ECONNREFUSED'
-      ? 'SSH_CONNECTION_REFUSED'
-      : source?.code === 'ENOTFOUND'
-        ? 'SSH_HOST_NOT_FOUND'
-        : 'SSH_CONNECTION_FAILED'
-  return appError(code, error instanceof Error ? error.message : 'SSH connection failed')
+  const source = error as (NodeJS.ErrnoException & { level?: string }) | undefined
+  const code = sshErrorCode(source?.code, source?.level)
+  const message = code === 'SSH_AUTHENTICATION_FAILED'
+    ? 'Authentication failed. Check the saved username and password or private key.'
+    : error instanceof Error ? error.message : 'SSH connection failed'
+  return appError(code, message)
 }
