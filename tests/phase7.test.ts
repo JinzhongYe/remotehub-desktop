@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DatabaseService } from '../src/main/services/database'
 import type { DatabaseAdapter } from '../src/main/services/database/adapter'
-import { buildPostgresCursorCommands, mapPostgresError, postgresSsl } from '../src/main/services/database/postgres'
+import { buildPostgresCursorCommands, isPostgresSystemDatabase, mapPostgresError, PostgresAdapter, postgresSsl } from '../src/main/services/database/postgres'
 import type { Connection } from '../src/shared/types'
 
 describe('Phase 7 PostgreSQL adapter', () => {
@@ -19,6 +19,20 @@ describe('Phase 7 PostgreSQL adapter', () => {
     expect(mapPostgresError(Object.assign(new Error('denied'), { code: '28P01' })).code).toBe('DATABASE_AUTH_FAILED')
     expect(mapPostgresError(Object.assign(new Error('missing'), { code: '3D000' })).code).toBe('DATABASE_NOT_FOUND')
     expect(mapPostgresError(Object.assign(new Error('syntax'), { code: '42601' })).code).toBe('DATABASE_SQL_INVALID')
+  })
+
+  it('lists physical databases, marks system databases, and reconnects to switch database', async () => {
+    const end = vi.fn(async () => undefined)
+    const client = { query: vi.fn(async (sql: string) => ({ rows: sql.includes('pg_database') ? [{ name: 'app' }, { name: 'postgres' }] : [{ schema: 'public', name: 'users', kind: 'r', rows: '2' }] })), end }
+    const nextClient = { query: vi.fn(), end: vi.fn(async () => undefined) }
+    const adapter = new PostgresAdapter(client as never, 'app', 'PostgreSQL 17', undefined, async (database) => ({ client: nextClient as never, database, serverVersion: 'PostgreSQL 17' }))
+
+    await expect(adapter.listDatabases()).resolves.toEqual([{ name: 'app', system: false }, { name: 'postgres', system: true }])
+    await expect(adapter.listTables('app')).resolves.toEqual([{ database: 'public', name: 'users', type: 'table', estimatedRows: 2 }])
+    expect(isPostgresSystemDatabase('template1')).toBe(true)
+    await adapter.useDatabase('analytics')
+    expect(adapter.database).toBe('analytics')
+    expect(end).toHaveBeenCalledOnce()
   })
 
   it('routes PostgreSQL through the selected trusted SSH asset', async () => {

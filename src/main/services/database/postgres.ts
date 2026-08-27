@@ -3,14 +3,14 @@ import type { Duplex } from 'node:stream'
 import { Client, type FieldDef, type QueryArrayResult } from 'pg'
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseResultColumn, DatabaseTable } from '../../../shared/database'
 import { databaseStatement, isPageableStatement, normalizeQueryRequest } from '../../../shared/database'
-import type { DatabaseSslMode } from '../../../shared/types'
+import type { Connection, DatabaseSslMode } from '../../../shared/types'
 import { fingerprintHostKey } from '../host-key'
 import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseTunnel } from './adapter'
 import { serializeDatabaseValue } from './mysql'
 
 const QUERY_TIMEOUT_MS = 30_000
 const CURSOR_NAME = '__remotehub_page'
-const SYSTEM_SCHEMAS = new Set(['information_schema', 'pg_catalog', 'pg_toast'])
+const SYSTEM_DATABASES = new Set(['postgres', 'rdsadmin', 'azure_maintenance'])
 const loadNativeModule = createRequire(__filename)
 
 type TunnelClient = {
@@ -21,34 +21,17 @@ type TunnelClient = {
 }
 
 type TunnelHandle = { stream: Duplex; close(): void }
+type PostgresHandle = { client: Client; database: string; serverVersion: string; tunnel?: TunnelHandle }
 
 export const postgresAdapterFactory: DatabaseAdapterFactory = {
   async connect(connection, password, tunnel) {
     if (connection.type !== 'database' || connection.databaseType !== 'postgres') throw databaseError('DATABASE_ADAPTER_UNAVAILABLE', 'PostgreSQL connection is required')
     if (!connection.username) throw databaseError('DATABASE_USERNAME_REQUIRED', 'PostgreSQL username is required')
-    let tunnelHandle: TunnelHandle | undefined
     try {
-      tunnelHandle = tunnel ? await openSshTunnel(tunnel, connection.host, connection.port) : undefined
-      const client = new Client({
-        host: connection.host,
-        port: connection.port,
-        user: connection.username,
-        password: password || '',
-        database: connection.database || connection.username,
-        ssl: postgresSsl(connection.databaseSslMode),
-        stream: tunnelHandle ? () => tunnelHandle!.stream : undefined,
-        application_name: 'RemoteHub',
-        connectionTimeoutMillis: 10_000,
-        statement_timeout: QUERY_TIMEOUT_MS,
-        query_timeout: QUERY_TIMEOUT_MS,
-        keepAlive: true
-      })
-      client.on('error', () => { /* queries surface errors; prevent idle client errors from becoming uncaught */ })
-      await client.connect()
-      const info = await client.query<{ version: string; schema: string }>('SELECT version(), current_schema() AS schema')
-      return new PostgresAdapter(client, info.rows[0]?.schema || 'public', info.rows[0]?.version || 'PostgreSQL', tunnelHandle)
+      const open = (database: string) => openPostgres(connection, password, tunnel, database)
+      const handle = await open(connection.database || connection.username)
+      return new PostgresAdapter(handle.client, handle.database, handle.serverVersion, handle.tunnel, open)
     } catch (error) {
-      tunnelHandle?.close()
       throw mapPostgresError(error)
     }
   }
@@ -59,7 +42,7 @@ export class PostgresAdapter implements DatabaseAdapter {
   private cursorSql = ''
   private cursorOpen = false
 
-  constructor(private readonly client: Client, public database: string, public readonly serverVersion: string, private readonly tunnel?: TunnelHandle) {}
+  constructor(private client: Client, public database: string, public readonly serverVersion: string, private tunnel?: TunnelHandle, private readonly reconnect?: (database: string) => Promise<PostgresHandle>) {}
 
   async ping(): Promise<void> {
     try { await this.client.query('SELECT 1') } catch (error) { throw mapPostgresError(error) }
@@ -67,32 +50,40 @@ export class PostgresAdapter implements DatabaseAdapter {
 
   async listDatabases(): Promise<DatabaseCatalog[]> {
     try {
-      const result = await this.client.query<{ name: string }>(`SELECT schema_name AS name FROM information_schema.schemata
-        WHERE schema_name NOT LIKE 'pg_temp_%' AND schema_name NOT LIKE 'pg_toast_temp_%' ORDER BY schema_name`)
-      return result.rows.map(({ name }) => ({ name, system: SYSTEM_SCHEMAS.has(name) || name.startsWith('pg_') }))
+      const result = await this.client.query<{ name: string }>(`SELECT datname AS name FROM pg_catalog.pg_database
+        WHERE datallowconn AND NOT datistemplate ORDER BY datname`)
+      return result.rows.map(({ name }) => ({ name, system: isPostgresSystemDatabase(name) }))
     } catch (error) { throw mapPostgresError(error) }
   }
 
-  async useDatabase(schema: string): Promise<void> {
-    const name = validateIdentifier(schema, 'schema')
+  async useDatabase(database: string): Promise<void> {
+    const name = validateIdentifier(database, 'database')
+    if (name === this.database) return
+    if (!this.reconnect) throw databaseError('DATABASE_SWITCH_UNAVAILABLE', 'PostgreSQL reconnect is unavailable')
     try {
       await this.closeCursor()
-      await this.client.query("SELECT set_config('search_path', quote_ident($1), false)", [name])
-      this.database = name
+      const next = await this.reconnect(name)
+      const previousClient = this.client
+      const previousTunnel = this.tunnel
+      this.client = next.client
+      this.tunnel = next.tunnel
+      this.database = next.database
+      void previousClient.end().finally(() => previousTunnel?.close())
     } catch (error) { throw mapPostgresError(error) }
   }
 
-  async listTables(schema: string): Promise<DatabaseTable[]> {
-    const name = validateIdentifier(schema, 'schema')
+  async listTables(database: string): Promise<DatabaseTable[]> {
+    validateIdentifier(database, 'database')
     try {
-      const result = await this.client.query<{ name: string; kind: string; rows: string }>(`SELECT c.relname AS name, c.relkind AS kind, c.reltuples::bigint::text AS rows
+      const result = await this.client.query<{ schema: string; name: string; kind: string; rows: string }>(`SELECT n.nspname AS schema, c.relname AS name, c.relkind AS kind, c.reltuples::bigint::text AS rows
         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm') ORDER BY c.relkind, c.relname`, [name])
+        WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg_%'
+          AND c.relkind IN ('r', 'p', 'v', 'm') ORDER BY n.nspname, c.relkind, c.relname`)
       return result.rows.map((row) => ({
-        database: name,
+        database: row.schema,
         name: row.name,
         type: row.kind === 'v' || row.kind === 'm' ? 'view' : 'table',
-        estimatedRows: Number.isFinite(Number(row.rows)) ? Number(row.rows) : undefined
+        estimatedRows: Number(row.rows) >= 0 ? Number(row.rows) : undefined
       }))
     } catch (error) { throw mapPostgresError(error) }
   }
@@ -190,6 +181,10 @@ export class PostgresAdapter implements DatabaseAdapter {
   }
 }
 
+export function isPostgresSystemDatabase(name: string): boolean {
+  return SYSTEM_DATABASES.has(name.toLocaleLowerCase()) || name.toLocaleLowerCase().startsWith('template')
+}
+
 export function buildPostgresCursorCommands(page: number, pageSize: number): { move: string; fetch: string } {
   const offset = page * pageSize
   return {
@@ -220,6 +215,36 @@ function rowResult(result: QueryArrayResult<unknown[]>, sourceRows: unknown[][],
 
 function serializeFields(fields: FieldDef[]): DatabaseResultColumn[] {
   return fields.map((field) => ({ name: field.name, table: field.tableID ? String(field.tableID) : undefined, type: String(field.dataTypeID) }))
+}
+
+async function openPostgres(connection: Connection, password: string | undefined, tunnel: DatabaseTunnel | undefined, database: string): Promise<PostgresHandle> {
+  let tunnelHandle: TunnelHandle | undefined
+  let client: Client | undefined
+  try {
+    tunnelHandle = tunnel ? await openSshTunnel(tunnel, connection.host, connection.port) : undefined
+    client = new Client({
+      host: connection.host,
+      port: connection.port,
+      user: connection.username,
+      password: password || '',
+      database,
+      ssl: postgresSsl(connection.databaseSslMode),
+      stream: tunnelHandle ? () => tunnelHandle!.stream : undefined,
+      application_name: 'RemoteHub',
+      connectionTimeoutMillis: 10_000,
+      statement_timeout: QUERY_TIMEOUT_MS,
+      query_timeout: QUERY_TIMEOUT_MS,
+      keepAlive: true
+    })
+    client.on('error', () => { /* queries surface errors; prevent idle client errors from becoming uncaught */ })
+    await client.connect()
+    const info = await client.query<{ version: string; database: string }>('SELECT version(), current_database() AS database')
+    return { client, database: info.rows[0]?.database || database, serverVersion: info.rows[0]?.version || 'PostgreSQL', tunnel: tunnelHandle }
+  } catch (error) {
+    void client?.end().catch(() => undefined)
+    tunnelHandle?.close()
+    throw error
+  }
 }
 
 async function openSshTunnel(tunnel: DatabaseTunnel, host: string, port: number): Promise<TunnelHandle> {

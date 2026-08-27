@@ -71,6 +71,20 @@ export const DATABASE_PAGE_SIZE = 200
 export const DATABASE_MAX_PAGE_SIZE = 500
 export const DATABASE_MAX_SQL_LENGTH = 1024 * 1024
 
+export function databaseDisplayRows(rows: DatabaseCell[][], filter = '', sortColumn = -1, direction: 'asc' | 'desc' = 'asc'): DatabaseCell[][] {
+  const needle = filter.trim().toLocaleLowerCase()
+  const visible = needle ? rows.filter((row) => row.some((cell) => (cell == null ? 'null' : String(cell)).toLocaleLowerCase().includes(needle))) : [...rows]
+  if (sortColumn < 0) return visible
+  return visible.sort((left, right) => {
+    const a = left[sortColumn]
+    const b = right[sortColumn]
+    const compared = typeof a === 'number' && typeof b === 'number'
+      ? a - b
+      : a == null ? 1 : b == null ? -1 : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' })
+    return direction === 'asc' ? compared : -compared
+  })
+}
+
 export function normalizeQueryRequest(request: DatabaseQueryRequest): Required<DatabaseQueryRequest> {
   if (!request || typeof request !== 'object') throw databaseInputError('DATABASE_QUERY_INVALID', 'Query request is invalid')
   const sql = String(request.sql || '').trim()

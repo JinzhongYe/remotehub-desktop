@@ -239,8 +239,26 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .schema-explorer { width: 235px; flex: 0 0 235px; overflow: auto; border-right: 1px solid var(--line); background: #111820; }
 .schema-heading { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; min-height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--muted); background: #151d26; font-size: 9px; font-weight: 650; text-transform: uppercase; letter-spacing: .6px; }
 .schema-heading small { margin-left: auto; color: var(--subtle); }
+.schema-search, .row-filter { display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--subtle); background: #0c1218; }
+.schema-search { position: sticky; z-index: 2; top: 34px; margin: 7px; padding: 5px 7px; }
+.schema-search input, .row-filter input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; }
+.schema-group { display: flex; align-items: center; min-height: 28px; gap: 6px; padding: 4px 9px; color: var(--muted); background: #151d26; font-size: 10px; }
+.schema-group span { color: #70b8d8; }
+.schema-group strong { flex: 1; font-weight: 600; }
+.schema-group small { color: var(--subtle); }
 .schema-empty { padding: 28px 12px; color: var(--subtle); font-size: 10px; text-align: center; }
+.database-node > button, .schema-node > button { display: flex; align-items: center; width: 100%; min-height: 34px; gap: 6px; padding: 5px 9px; border: 0; color: var(--muted); background: transparent; font-size: 11px; text-align: left; }
+.database-node > button:hover, .database-node.active > button, .schema-node > button:hover, .schema-node.active > button { background: #151d26; }
+.database-node > button > span, .schema-node > button > span { width: 9px; color: var(--subtle); }
+.database-node > button > i, .schema-node > button > i { display: grid; width: 19px; height: 19px; place-items: center; border-radius: 3px; font-size: 8px; font-style: normal; font-weight: 700; }
+.database-node > button > i { color: #d6b5ff; background: rgba(214,181,255,.1); }
+.schema-node > button > i { color: #7fc6a4; background: rgba(127,198,164,.1); }
+.database-node > button > strong, .schema-node > button > strong { min-width: 0; flex: 1; overflow: hidden; color: var(--text); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+.database-node .schema-node > button { padding-left: 25px; }
+.database-node .schema-node .schema-group, .database-node .schema-node .schema-table > button { padding-left: 47px; }
+.database-node .schema-node .schema-columns { padding-left: 69px; }
 .schema-table { border-bottom: 1px solid var(--line-soft); }
+.schema-table.active { background: #1a2732; box-shadow: inset 2px 0 var(--blue); }
 .schema-table > button { display: flex; align-items: center; width: 100%; min-height: 32px; gap: 6px; padding: 5px 9px; border: 0; color: var(--muted); background: transparent; font-size: 10px; text-align: left; }
 .schema-table > button:hover { background: #19232d; }
 .schema-table > button > span { width: 9px; color: var(--subtle); font-size: 13px; }
@@ -254,6 +272,15 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .schema-columns > span small { max-width: 76px; overflow: hidden; color: var(--subtle); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .schema-insert { align-self: flex-start; margin: 2px 0 4px; padding: 2px 0; border: 0; color: var(--blue); background: transparent; font-size: 8px; }
 .sql-workspace { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.database-tabs { display: flex; min-height: 34px; flex: 0 0 34px; overflow-x: auto; border-bottom: 1px solid var(--line); background: #10171f; }
+.database-tabs > button, .database-table-tab { min-width: 130px; max-width: 260px; flex: 0 0 auto; overflow: hidden; border: 0; border-right: 1px solid var(--line); border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-size: 10px; }
+.database-tabs > button { padding: 0 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.database-tabs > button.active, .database-table-tab.active { border-bottom-color: var(--blue); color: var(--text); background: #151d26; }
+.database-table-tab { display: flex; align-items: stretch; }
+.database-table-tab > button { min-width: 0; overflow: hidden; padding: 0 5px 0 12px; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.database-table-tab > button:first-child { flex: 1; }
+.database-table-tab > .database-tab-close { flex: 0 0 26px; padding: 0; color: var(--subtle); text-align: center; }
+.database-table-tab > .database-tab-close:hover { color: var(--text); background: #25303b; }
 .sql-editor-section { display: flex; height: 40%; min-height: 190px; flex: 0 0 40%; flex-direction: column; border-bottom: 1px solid var(--line); }
 .sql-section-toolbar, .result-toolbar { display: flex; align-items: center; min-height: 34px; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--line-soft); color: var(--text); background: #151d26; font-size: 10px; font-weight: 650; }
 .sql-section-toolbar small, .result-toolbar small { color: var(--subtle); font-size: 8px; font-weight: 400; }
@@ -264,6 +291,8 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .sql-editor-host .cm-gutters { border-right-color: var(--line-soft); background: #10171f; }
 .result-section { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .result-toolbar { flex: 0 0 34px; }
+.result-toolbar strong { font-weight: 650; }
+.row-filter { width: 180px; margin-left: auto; padding: 4px 7px; font-size: 9px; font-weight: 400; }
 .result-pager { display: flex; align-items: center; gap: 7px; margin-left: auto; color: var(--muted); font-size: 9px; font-weight: 400; }
 .result-export { margin-left: auto; padding: 3px 7px; }
 .result-export + .result-pager { margin-left: 0; }
@@ -272,11 +301,19 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .result-grid-wrap { min-height: 0; flex: 1; overflow: auto; }
 .result-grid { min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; }
 .result-grid th { position: sticky; z-index: 1; top: 0; max-width: 280px; padding: 7px 9px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line); color: var(--muted); background: #151d26; font-size: 9px; font-weight: 650; text-align: left; white-space: nowrap; }
+.result-grid th > button { display: flex; width: 100%; min-width: 110px; flex-direction: column; gap: 2px; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; }
+.result-grid th > button span { display: flex; width: 100%; align-items: center; gap: 4px; }
+.result-grid th > button i { margin-left: auto; color: var(--blue); font-style: normal; }
+.result-grid th > button small { max-width: 170px; overflow: hidden; color: var(--subtle); font-size: 8px; font-weight: 400; text-overflow: ellipsis; }
 .result-grid td { max-width: 360px; padding: 6px 9px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); color: var(--text); font: 9px/1.35 "Cascadia Mono", Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-grid tbody tr:hover td { background: #151f29; }
 .result-grid .row-number { position: sticky; left: 0; width: 48px; min-width: 48px; color: var(--subtle); background: #121921; text-align: right; }
 .result-grid th.row-number { z-index: 2; background: #151d26; }
 .result-grid td.null { color: #8d789e; font-style: italic; }
+.result-status { display: flex; min-height: 28px; flex: 0 0 28px; align-items: center; gap: 10px; padding: 0 8px; border-top: 1px solid var(--line); color: var(--subtle); background: #111820; font-size: 9px; }
+.result-status code { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.result-status > span { white-space: nowrap; }
+.result-status .result-pager { margin-left: 0; }
 .result-empty, .mutation-result { display: flex; height: 100%; min-height: 100px; align-items: center; justify-content: center; color: var(--subtle); font-size: 10px; }
 .mutation-result { flex-direction: column; gap: 7px; }
 .mutation-result strong { color: var(--green); font-size: 12px; }

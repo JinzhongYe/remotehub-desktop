@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { databaseResultToCsv } from '../src/shared/database'
+import { databaseDisplayRows, databaseResultToCsv } from '../src/shared/database'
 import { SqliteAdapter } from '../src/main/services/database/sqlite'
 
 describe('Phase 8 SQLite workspace', () => {
@@ -36,5 +36,10 @@ describe('Phase 8 SQLite workspace', () => {
     expect(databaseResultToCsv({
       fileName: 'devices.csv', columns: ['name', 'note'], rows: [['alpha', 'one, two'], ['"beta"', 'line\nbreak']]
     })).toBe('name,note\r\nalpha,"one, two"\r\n"""beta""","line\nbreak"')
+  })
+
+  it('filters and sorts the visible result page', () => {
+    const rows = [[10, 'Beta'], [2, 'alpha'], [null, 'alphabet']] as const
+    expect(databaseDisplayRows(rows.map((row) => [...row]), 'alpha', 0, 'desc')).toEqual([[null, 'alphabet'], [2, 'alpha']])
   })
 })
