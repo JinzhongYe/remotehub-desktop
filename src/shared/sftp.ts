@@ -11,15 +11,38 @@ export interface SftpEntry {
 
 export type SftpConnectResult = { sessionId: string; homePath: string; trustRequired?: false } | { trustRequired: true; fingerprint: string }
 
-export interface SftpTransferEvent {
+export type SftpTransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'error' | 'cancelled'
+
+export interface SftpTransferItem {
   transferId: string
   sessionId: string
   direction: 'upload' | 'download'
   name: string
+  relativePath: string
   transferred: number
   total: number
-  status: 'running' | 'completed' | 'error'
+  speed: number
+  status: SftpTransferStatus
   message?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type SftpTransferEvent = SftpTransferItem
+
+export interface SftpTransferConflict {
+  direction: 'upload' | 'download'
+  path: string
+  name: string
+}
+
+export interface SftpQueueResult {
+  transferIds: string[]
+  conflicts: SftpTransferConflict[]
+}
+
+export function transferProgress(item: Pick<SftpTransferItem, 'transferred' | 'total'>): number {
+  return item.total > 0 ? Math.min(100, Math.max(0, Math.round(item.transferred / item.total * 100))) : 0
 }
 
 export function normalizeRemotePath(path: string): string {

@@ -27,9 +27,17 @@ export function registerAppIpc(): void {
     const result = await dialog.showOpenDialog({ title: 'Choose files to upload', properties: ['openFile', 'multiSelections'] })
     return result.canceled ? [] : result.filePaths
   })
+  ipcMain.handle('app:chooseUploadFolder', async () => {
+    const result = await dialog.showOpenDialog({ title: 'Choose folder to upload', properties: ['openDirectory'] })
+    return result.canceled ? null : result.filePaths[0] || null
+  })
   ipcMain.handle('app:chooseDownloadPath', async (_event, defaultName: string) => {
     if (typeof defaultName !== 'string' || defaultName.length > 255) throw new Error('Download filename is invalid')
     const result = await dialog.showSaveDialog({ title: 'Save remote file', defaultPath: defaultName })
     return result.canceled ? null : result.filePath || null
+  })
+  ipcMain.handle('app:chooseDownloadDirectory', async () => {
+    const result = await dialog.showOpenDialog({ title: 'Choose download folder', properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled ? null : result.filePaths[0] || null
   })
 }

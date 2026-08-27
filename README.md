@@ -1,6 +1,6 @@
 # RemoteHub Desktop
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本完成 Phase 4：可以管理连接，通过 SSH 打开多个终端和 SFTP 文件工作区，也可以连接本机串口设备；MySQL、PostgreSQL 和 SQLite 工作区会在后续阶段接入。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本完成 Phase 5：可以管理连接，通过 SSH 打开多个终端和带传输队列的 SFTP 文件工作区，也可以连接本机串口设备；MySQL、PostgreSQL 和 SQLite 工作区会在后续阶段接入。
 
 ## 当前交付
 
@@ -11,7 +11,8 @@ RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当�
 - 中英文切换、可折叠分组与拖动排序、最近连接和 TCP 可达性测试
 - 系统保护的凭据引用（macOS Keychain、Windows DPAPI、Linux Secret Service）
 - SSH 密码 / Private Key 登录、Host Key 指纹确认、终端多开、右键复制、resize、断开和重连
-- SFTP 目录浏览、上传、拖动上传、下载、新建文件夹、重命名和删除
+- SFTP 目录浏览、文件/文件夹递归上传下载、新建文件夹、重命名和删除
+- 双并发传输队列、实时进度与速度、暂停/继续、取消、失败重试和覆盖确认
 - 串口设备发现、波特率配置、连接测试和独立串口终端
 - 私钥支持粘贴，也支持直接选择 OpenSSH、PEM、PKCS#8 和 PuTTY PPK 文件
 - 紧凑的深色开发工具界面
@@ -33,7 +34,9 @@ npm run dev
 
 Windows 也可以双击 `start.bat`；它会检查 Node.js / npm，并在首次运行或缺少串口组件时自动更新依赖。macOS 可直接在 Terminal 使用上述命令，并支持 `⌘K` 搜索和 `⌘N` 新建连接；Windows/Linux 对应 `Ctrl+K` 和 `Ctrl+N`。
 
-SSH 连接保存后，单击连接打开终端；连接行上的 `⇄` 按钮打开 SFTP。串口连接选择 `Serial / 串口` 类型，选取 `COM3`、`/dev/ttyUSB0` 等设备并填写波特率。当前 Phase 4 传输单个或多个文件，文件夹队列、暂停和重试会在 Phase 5 完成。
+SSH 连接保存后，单击连接打开终端；连接行上的 `⇄` 按钮打开 SFTP。可以选择或拖入文件与文件夹，下载远程目录时会保留目录结构；同名文件会先集中确认，传输队列支持暂停、继续、取消和重试。串口连接选择 `Serial / 串口` 类型，选取 `COM3`、`/dev/ttyUSB0` 等设备并填写波特率。
+
+传输任务属于当前 SFTP 标签：关闭标签或断开连接会取消未完成任务。失败或取消的传输可能留下不完整目标文件，点击“重试”会从头覆盖该文件。
 
 ## 校验与构建
 

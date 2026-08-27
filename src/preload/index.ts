@@ -10,7 +10,9 @@ const api = {
     copyText: (text: string) => ipcRenderer.invoke('app:copyText', text),
     choosePrivateKey: () => ipcRenderer.invoke('app:choosePrivateKey'),
     chooseUploadFiles: () => ipcRenderer.invoke('app:chooseUploadFiles'),
-    chooseDownloadPath: (defaultName: string) => ipcRenderer.invoke('app:chooseDownloadPath', defaultName)
+    chooseUploadFolder: () => ipcRenderer.invoke('app:chooseUploadFolder'),
+    chooseDownloadPath: (defaultName: string) => ipcRenderer.invoke('app:chooseDownloadPath', defaultName),
+    chooseDownloadDirectory: () => ipcRenderer.invoke('app:chooseDownloadDirectory')
   },
   files: {
     getPath: (file: File) => webUtils.getPathForFile(file)
@@ -47,8 +49,14 @@ const api = {
     mkdir: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:mkdir', sessionId, path),
     rename: (sessionId: string, oldPath: string, newPath: string) => ipcRenderer.invoke('sftp:rename', sessionId, oldPath, newPath),
     remove: (sessionId: string, path: string, type: 'file' | 'directory' | 'link') => ipcRenderer.invoke('sftp:remove', sessionId, path, type),
-    upload: (sessionId: string, localPath: string, remoteDirectory: string) => ipcRenderer.invoke('sftp:upload', sessionId, localPath, remoteDirectory),
-    download: (sessionId: string, remotePath: string, localPath: string, size: number) => ipcRenderer.invoke('sftp:download', sessionId, remotePath, localPath, size),
+    enqueueUploads: (sessionId: string, localPaths: string[], remoteDirectory: string, overwrite = false) => ipcRenderer.invoke('sftp:enqueueUploads', sessionId, localPaths, remoteDirectory, overwrite),
+    enqueueDownload: (sessionId: string, remotePath: string, localDirectory: string, entryType: 'file' | 'directory' | 'link', overwrite = false) => ipcRenderer.invoke('sftp:enqueueDownload', sessionId, remotePath, localDirectory, entryType, overwrite),
+    listTransfers: (sessionId: string) => ipcRenderer.invoke('sftp:listTransfers', sessionId),
+    pauseTransfer: (sessionId: string, transferId: string) => ipcRenderer.invoke('sftp:pauseTransfer', sessionId, transferId),
+    resumeTransfer: (sessionId: string, transferId: string) => ipcRenderer.invoke('sftp:resumeTransfer', sessionId, transferId),
+    cancelTransfer: (sessionId: string, transferId: string) => ipcRenderer.invoke('sftp:cancelTransfer', sessionId, transferId),
+    retryTransfer: (sessionId: string, transferId: string) => ipcRenderer.invoke('sftp:retryTransfer', sessionId, transferId),
+    clearFinishedTransfers: (sessionId: string) => ipcRenderer.invoke('sftp:clearFinishedTransfers', sessionId),
     disconnect: (sessionId: string) => ipcRenderer.invoke('sftp:disconnect', sessionId),
     onTransfer: (listener: (event: SftpTransferEvent) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: SftpTransferEvent): void => listener(payload)

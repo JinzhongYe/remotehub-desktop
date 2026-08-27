@@ -1,25 +1,28 @@
 import { createRequire } from 'node:module'
-import { basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { statSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { basename, isAbsolute, join, posix } from 'node:path'
+import type { Readable, Writable } from 'node:stream'
 import type { Connection } from '../../shared/types'
-import { joinRemotePath, normalizeRemotePath, type SftpConnectResult, type SftpEntry, type SftpTransferEvent } from '../../shared/sftp'
+import { joinRemotePath, normalizeRemotePath, type SftpConnectResult, type SftpEntry, type SftpEntryType, type SftpQueueResult, type SftpTransferConflict, type SftpTransferEvent, type SftpTransferItem } from '../../shared/sftp'
 import { sshErrorCode } from '../../shared/ssh'
 import { CredentialService } from './credentials'
 import { fingerprintHostKey, hostKeyState } from './host-key'
 import { appError, StorageService } from './storage'
+import { TransferManager, type TransferControl, type TransferHooks } from './transfer-manager'
 
 type SftpAttrs = { size?: number; mtime?: number; mode?: number }
 type SftpListItem = { filename: string; attrs: SftpAttrs }
 type SftpLike = {
   readdir(path: string, callback: (error: Error | undefined, list: SftpListItem[]) => void): void
   realpath(path: string, callback: (error: Error | undefined, resolved: string) => void): void
+  stat(path: string, callback: (error: Error | undefined, attrs: SftpAttrs) => void): void
   mkdir(path: string, callback: (error?: Error) => void): void
   rename(oldPath: string, newPath: string, callback: (error?: Error) => void): void
   unlink(path: string, callback: (error?: Error) => void): void
   rmdir(path: string, callback: (error?: Error) => void): void
-  fastPut(localPath: string, remotePath: string, options: { step: (transferred: number, chunk: number, total: number) => void }, callback: (error?: Error) => void): void
-  fastGet(remotePath: string, localPath: string, options: { step: (transferred: number, chunk: number, total: number) => void }, callback: (error?: Error) => void): void
+  createReadStream(path: string, options: { start?: number }): Readable
+  createWriteStream(path: string, options: { flags: string; start?: number }): Writable
   end(): void
 }
 type SshClientLike = {
@@ -31,14 +34,19 @@ type SshClientLike = {
 type SshClientConstructor = new () => SshClientLike
 type SftpSession = { id: string; connectionId: string; client: SshClientLike; sftp: SftpLike }
 type EventSink = (channel: 'sftp:transfer', payload: SftpTransferEvent) => void
+type FilePlan = { localPath: string; remotePath: string; relativePath: string; size: number }
 
 const loadNativeModule = createRequire(__filename)
+const MAX_TRANSFER_FILES = 5000
 
 export class SftpService {
   private readonly sessions = new Map<string, SftpSession>()
   private readonly pendingHostKeys = new Map<string, string>()
+  private readonly transfers: TransferManager
 
-  constructor(private readonly storage: StorageService, private readonly credentials: CredentialService, private readonly send: EventSink) {}
+  constructor(private readonly storage: StorageService, private readonly credentials: CredentialService, private readonly send: EventSink) {
+    this.transfers = new TransferManager((item) => this.emit(item), 2)
+  }
 
   async connect(connection: Connection): Promise<SftpConnectResult> {
     if (connection.type !== 'ssh') throw appError('SFTP_CONNECTION_INVALID', 'SFTP requires an SSH connection')
@@ -46,7 +54,6 @@ export class SftpService {
     if (!credential) throw appError('CREDENTIAL_MISSING', 'Save a password or private key before connecting')
     const client = this.createClient()
     let receivedHostKey: string | undefined
-
     return new Promise((resolve, reject) => {
       let settled = false
       const fail = (error: unknown): void => {
@@ -65,7 +72,6 @@ export class SftpService {
         }
         reject(toSftpError(error))
       }
-
       client.on('ready', () => {
         client.sftp((error, sftp) => {
           if (error) return fail(error)
@@ -97,38 +103,19 @@ export class SftpService {
           },
           ...(connection.authType === 'privateKey' ? { privateKey: credential } : { password: credential })
         })
-      } catch (error) {
-        fail(error)
-      }
+      } catch (error) { fail(error) }
     })
   }
 
   trustHostKey(connectionId: string, fingerprint: string): void {
     if (this.storage.getConnection(connectionId)?.hostKeyFingerprint === fingerprint) return
-    if (typeof connectionId !== 'string' || connectionId.length > 100 || this.pendingHostKeys.get(connectionId) !== fingerprint) {
-      throw appError('SSH_HOST_KEY_INVALID', 'Host key confirmation is invalid or expired')
-    }
+    if (typeof connectionId !== 'string' || connectionId.length > 100 || this.pendingHostKeys.get(connectionId) !== fingerprint) throw appError('SSH_HOST_KEY_INVALID', 'Host key confirmation is invalid or expired')
     this.storage.trustHostKey(connectionId, fingerprint)
     this.pendingHostKeys.delete(connectionId)
   }
 
   list(sessionId: string, path: string): Promise<SftpEntry[]> {
-    const session = this.getSession(sessionId)
-    const normalized = validateRemotePath(path)
-    return new Promise((resolve, reject) => session.sftp.readdir(normalized, (error, list) => {
-      if (error) return reject(toSftpError(error))
-      resolve(list
-        .filter((item) => item.filename !== '.' && item.filename !== '..')
-        .map((item) => ({
-          name: item.filename,
-          path: joinRemotePath(normalized, item.filename),
-          type: modeType(item.attrs.mode),
-          size: Number(item.attrs.size || 0),
-          modifiedAt: Number(item.attrs.mtime || 0) * 1000,
-          mode: Number(item.attrs.mode || 0)
-        }))
-        .sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1))
-    }))
+    return this.readDirectory(this.getSession(sessionId).sftp, validateRemotePath(path))
   }
 
   mkdir(sessionId: string, path: string): Promise<void> {
@@ -140,31 +127,97 @@ export class SftpService {
     return new Promise((resolve, reject) => session.sftp.rename(validateRemotePath(oldPath), validateRemotePath(newPath), (error) => error ? reject(toSftpError(error)) : resolve()))
   }
 
-  remove(sessionId: string, path: string, type: 'file' | 'directory' | 'link'): Promise<void> {
+  remove(sessionId: string, path: string, type: SftpEntryType): Promise<void> {
     if (type !== 'file' && type !== 'directory' && type !== 'link') throw appError('SFTP_ENTRY_TYPE_INVALID', 'Remote entry type is invalid')
     return this.call(sessionId, type === 'directory' ? 'rmdir' : 'unlink', validateRemotePath(path))
   }
 
-  upload(sessionId: string, localPath: string, remoteDirectory: string): Promise<{ transferId: string }> {
-    if (typeof localPath !== 'string' || !localPath || localPath.length > 32767) throw appError('SFTP_LOCAL_PATH_INVALID', 'Local file path is invalid')
-    const stat = statSync(localPath)
-    if (!stat.isFile()) throw appError('SFTP_LOCAL_PATH_INVALID', 'Only files can be uploaded in Phase 4')
+  async enqueueUploads(sessionId: string, localPaths: string[], remoteDirectory: string, overwrite: boolean): Promise<SftpQueueResult> {
     const session = this.getSession(sessionId)
-    const name = basename(localPath)
-    const remotePath = joinRemotePath(validateRemotePath(remoteDirectory), name)
-    return this.transfer(session, 'upload', name, stat.size, (step, done) => session.sftp.fastPut(localPath, remotePath, { step }, done))
+    if (!Array.isArray(localPaths) || !localPaths.length || localPaths.length > 100 || localPaths.some((path) => typeof path !== 'string')) throw appError('TRANSFER_INPUT_INVALID', 'Choose between 1 and 100 files or folders')
+    const directory = validateRemotePath(remoteDirectory)
+    const { files, directories } = buildUploadPlan(localPaths, directory)
+    const conflicts = await findConflicts(files, async (file) => Boolean(await this.remoteStat(session.sftp, file.remotePath)), 'upload')
+    if (conflicts.length && !overwrite) return { transferIds: [], conflicts }
+    for (const remotePath of directories.sort((a, b) => pathDepth(a) - pathDepth(b))) await this.ensureRemoteDirectory(session.sftp, remotePath)
+    const transferIds = files.map((file) => this.transfers.enqueue({
+      sessionId,
+      direction: 'upload',
+      name: basename(file.localPath),
+      relativePath: file.relativePath,
+      total: file.size,
+      start: (offset, hooks) => this.startUpload(session.sftp, file, offset, hooks)
+    }).transferId)
+    return { transferIds, conflicts: [] }
   }
 
-  download(sessionId: string, remotePath: string, localPath: string, size: number): Promise<{ transferId: string }> {
-    if (typeof localPath !== 'string' || !localPath || localPath.length > 32767) throw appError('SFTP_LOCAL_PATH_INVALID', 'Local file path is invalid')
+  async enqueueDownload(sessionId: string, remotePathInput: string, localDirectoryInput: string, entryType: SftpEntryType, overwrite: boolean): Promise<SftpQueueResult> {
     const session = this.getSession(sessionId)
-    const normalized = validateRemotePath(remotePath)
-    return this.transfer(session, 'download', basename(normalized), Math.max(0, Number(size) || 0), (step, done) => session.sftp.fastGet(normalized, localPath, { step }, done))
+    const remotePath = validateRemotePath(remotePathInput)
+    const localDirectory = validateLocalDirectory(localDirectoryInput)
+    if (entryType !== 'file' && entryType !== 'directory' && entryType !== 'link') throw appError('SFTP_ENTRY_TYPE_INVALID', 'Remote entry type is invalid')
+    const rootName = posix.basename(remotePath)
+    safeLocalFileName(rootName)
+    const files: FilePlan[] = []
+    const directories = new Set<string>()
+    if (entryType === 'directory') await this.collectDownloadPlan(session.sftp, remotePath, join(localDirectory, rootName), rootName, files, directories, 0)
+    else {
+      const attrs = await this.remoteStat(session.sftp, remotePath)
+      if (!attrs) throw appError('SFTP_PATH_NOT_FOUND', 'Remote file no longer exists')
+      files.push({ localPath: join(localDirectory, rootName), remotePath, relativePath: rootName, size: Number(attrs.size || 0) })
+    }
+    assertUniqueLocalTargets(files)
+    const conflicts = await findConflicts(files, async (file) => existsSync(file.localPath), 'download')
+    if (conflicts.length && !overwrite) return { transferIds: [], conflicts }
+    for (const localPath of directories) {
+      if (existsSync(localPath) && !lstatSync(localPath).isDirectory()) throw appError('TRANSFER_DIRECTORY_CONFLICT', `A file blocks the destination folder: ${localPath}`)
+      mkdirSync(localPath, { recursive: true })
+    }
+    const transferIds = files.map((file) => this.transfers.enqueue({
+      sessionId,
+      direction: 'download',
+      name: posix.basename(file.remotePath),
+      relativePath: file.relativePath,
+      total: file.size,
+      start: (offset, hooks) => this.startDownload(session.sftp, file, offset, hooks)
+    }).transferId)
+    return { transferIds, conflicts: [] }
+  }
+
+  listTransfers(sessionId: string): SftpTransferItem[] {
+    this.getSession(sessionId)
+    return this.transfers.list(sessionId)
+  }
+
+  pauseTransfer(sessionId: string, transferId: string): SftpTransferItem {
+    this.assertTransferSession(sessionId, transferId)
+    return this.transfers.pause(transferId)
+  }
+
+  resumeTransfer(sessionId: string, transferId: string): SftpTransferItem {
+    this.assertTransferSession(sessionId, transferId)
+    return this.transfers.resume(transferId)
+  }
+
+  cancelTransfer(sessionId: string, transferId: string): SftpTransferItem {
+    this.assertTransferSession(sessionId, transferId)
+    return this.transfers.cancel(transferId)
+  }
+
+  retryTransfer(sessionId: string, transferId: string): SftpTransferItem {
+    this.assertTransferSession(sessionId, transferId)
+    return this.transfers.retry(transferId)
+  }
+
+  clearFinishedTransfers(sessionId: string): void {
+    this.getSession(sessionId)
+    this.transfers.clearFinished(sessionId)
   }
 
   disconnect(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
+    this.transfers.closeSession(sessionId)
     this.sessions.delete(sessionId)
     try { session.sftp.end() } catch { /* best effort */ }
     try { session.client.end() } catch { /* best effort */ }
@@ -180,9 +233,7 @@ export class SftpService {
       const module = loadNativeModule('ssh2') as { Client?: SshClientConstructor }
       if (!module.Client) throw new Error('ssh2 Client export is unavailable')
       return new module.Client()
-    } catch {
-      throw appError('SFTP_UNAVAILABLE', 'SFTP module is unavailable; run npm install and restart')
-    }
+    } catch { throw appError('SFTP_UNAVAILABLE', 'SFTP module is unavailable; run npm install and restart') }
   }
 
   private getSession(sessionId: string): SftpSession {
@@ -192,24 +243,62 @@ export class SftpService {
     return session
   }
 
+  private assertTransferSession(sessionId: string, transferId: string): void {
+    this.getSession(sessionId)
+    if (this.transfers.getItem(transferId).sessionId !== sessionId) throw appError('TRANSFER_NOT_FOUND', 'Transfer not found in this session')
+  }
+
+  private readDirectory(sftp: SftpLike, path: string): Promise<SftpEntry[]> {
+    return new Promise((resolve, reject) => sftp.readdir(path, (error, list) => {
+      if (error) return reject(toSftpError(error))
+      resolve(list.filter((item) => item.filename !== '.' && item.filename !== '..').map((item) => ({
+        name: item.filename,
+        path: joinRemotePath(path, item.filename),
+        type: modeType(item.attrs.mode),
+        size: Number(item.attrs.size || 0),
+        modifiedAt: Number(item.attrs.mtime || 0) * 1000,
+        mode: Number(item.attrs.mode || 0)
+      })).sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1))
+    }))
+  }
+
+  private remoteStat(sftp: SftpLike, path: string): Promise<SftpAttrs | undefined> {
+    return new Promise((resolve) => sftp.stat(path, (error, attrs) => resolve(error ? undefined : attrs)))
+  }
+
+  private async ensureRemoteDirectory(sftp: SftpLike, path: string): Promise<void> {
+    const existing = await this.remoteStat(sftp, path)
+    if (existing) {
+      if (modeType(existing.mode) !== 'directory') throw appError('TRANSFER_DIRECTORY_CONFLICT', `A file blocks the remote folder: ${path}`)
+      return
+    }
+    await new Promise<void>((resolve, reject) => sftp.mkdir(path, (error) => error ? reject(toSftpError(error)) : resolve()))
+  }
+
+  private async collectDownloadPlan(sftp: SftpLike, remoteDirectory: string, localDirectory: string, relativeDirectory: string, files: FilePlan[], directories: Set<string>, depth: number): Promise<void> {
+    if (depth > 100) throw appError('TRANSFER_TOO_DEEP', 'Remote folder nesting exceeds 100 levels')
+    directories.add(localDirectory)
+    const entries = await this.readDirectory(sftp, remoteDirectory)
+    for (const entry of entries) {
+      const localPath = join(localDirectory, safeLocalFileName(entry.name))
+      const relativePath = `${relativeDirectory}/${entry.name}`.replaceAll('\\', '/')
+      if (entry.type === 'directory') await this.collectDownloadPlan(sftp, entry.path, localPath, relativePath, files, directories, depth + 1)
+      else files.push({ localPath, remotePath: entry.path, relativePath, size: entry.size })
+      if (files.length > MAX_TRANSFER_FILES) throw appError('TRANSFER_TOO_LARGE', `Folder contains more than ${MAX_TRANSFER_FILES} files`)
+    }
+  }
+
+  private startUpload(sftp: SftpLike, file: FilePlan, offset: number, hooks: TransferHooks): TransferControl {
+    return pipeTransfer(createReadStream(file.localPath, { start: offset }), sftp.createWriteStream(file.remotePath, { flags: offset > 0 ? 'r+' : 'w', start: offset }), offset, hooks)
+  }
+
+  private startDownload(sftp: SftpLike, file: FilePlan, offset: number, hooks: TransferHooks): TransferControl {
+    return pipeTransfer(sftp.createReadStream(file.remotePath, { start: offset }), createWriteStream(file.localPath, { flags: offset > 0 ? 'r+' : 'w', start: offset }), offset, hooks)
+  }
+
   private call(sessionId: string, method: 'mkdir' | 'unlink' | 'rmdir', path: string): Promise<void> {
     const session = this.getSession(sessionId)
     return new Promise((resolve, reject) => session.sftp[method](path, (error) => error ? reject(toSftpError(error)) : resolve()))
-  }
-
-  private transfer(session: SftpSession, direction: 'upload' | 'download', name: string, expectedTotal: number, start: (step: (transferred: number, chunk: number, total: number) => void, done: (error?: Error) => void) => void): Promise<{ transferId: string }> {
-    const transferId = randomUUID()
-    this.emit({ transferId, sessionId: session.id, direction, name, transferred: 0, total: expectedTotal, status: 'running' })
-    try {
-      start((transferred, _chunk, total) => this.emit({ transferId, sessionId: session.id, direction, name, transferred, total: total || expectedTotal, status: 'running' }), (error) => {
-        this.emit({ transferId, sessionId: session.id, direction, name, transferred: error ? 0 : expectedTotal, total: expectedTotal, status: error ? 'error' : 'completed', message: error?.message })
-      })
-    } catch (error) {
-      const failure = toSftpError(error)
-      this.emit({ transferId, sessionId: session.id, direction, name, transferred: 0, total: expectedTotal, status: 'error', message: failure.message })
-      throw failure
-    }
-    return Promise.resolve({ transferId })
   }
 
   private emit(event: SftpTransferEvent): void {
@@ -217,7 +306,79 @@ export class SftpService {
   }
 
   private removeClient(client: SshClientLike): void {
-    for (const [id, session] of this.sessions) if (session.client === client) this.sessions.delete(id)
+    for (const [id, session] of this.sessions) if (session.client === client) {
+      this.transfers.closeSession(id)
+      this.sessions.delete(id)
+    }
+  }
+}
+
+function buildUploadPlan(localPaths: string[], remoteDirectory: string): { files: FilePlan[]; directories: string[] } {
+  const files: FilePlan[] = []
+  const directories = new Set<string>()
+  const targets = new Set<string>()
+  const addFile = (localPath: string, remotePath: string, relativePath: string): void => {
+    if (files.length >= MAX_TRANSFER_FILES) throw appError('TRANSFER_TOO_LARGE', `Selection contains more than ${MAX_TRANSFER_FILES} files`)
+    if (targets.has(remotePath)) throw appError('TRANSFER_DUPLICATE_TARGET', `Multiple local files map to ${remotePath}`)
+    targets.add(remotePath)
+    files.push({ localPath, remotePath, relativePath, size: statSync(localPath).size })
+  }
+  const walk = (localDirectory: string, remotePath: string, relativePath: string, depth: number): void => {
+    if (depth > 100) throw appError('TRANSFER_TOO_DEEP', 'Local folder nesting exceeds 100 levels')
+    directories.add(remotePath)
+    for (const entry of readdirSync(localDirectory, { withFileTypes: true })) {
+      const localChild = join(localDirectory, entry.name)
+      const remoteChild = joinRemotePath(remotePath, entry.name)
+      const relativeChild = `${relativePath}/${entry.name}`.replaceAll('\\', '/')
+      if (entry.isDirectory()) walk(localChild, remoteChild, relativeChild, depth + 1)
+      else if (entry.isFile()) addFile(localChild, remoteChild, relativeChild)
+    }
+  }
+  for (const path of localPaths) {
+    const localPath = validateLocalPath(path)
+    const stat = lstatSync(localPath)
+    const name = basename(localPath)
+    const remotePath = joinRemotePath(remoteDirectory, name)
+    if (stat.isDirectory()) walk(localPath, remotePath, name, 0)
+    else if (stat.isFile()) addFile(localPath, remotePath, name)
+    else throw appError('TRANSFER_INPUT_INVALID', `Unsupported local item: ${name}`)
+  }
+  return { files, directories: [...directories] }
+}
+
+async function findConflicts(files: FilePlan[], exists: (file: FilePlan) => Promise<boolean>, direction: 'upload' | 'download'): Promise<SftpTransferConflict[]> {
+  const conflicts: SftpTransferConflict[] = []
+  let next = 0
+  const workers = Array.from({ length: Math.min(8, files.length) }, async () => {
+    while (next < files.length) {
+      const file = files[next++]
+      if (await exists(file)) conflicts.push({ direction, path: direction === 'upload' ? file.remotePath : file.localPath, name: file.relativePath })
+    }
+  })
+  await Promise.all(workers)
+  return conflicts.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function pipeTransfer(source: Readable, target: Writable, offset: number, hooks: TransferHooks): TransferControl {
+  let transferred = offset
+  let settled = false
+  const done = (error?: Error): void => {
+    if (settled) return
+    settled = true
+    hooks.done(error)
+  }
+  source.on('data', (chunk: Buffer | string) => {
+    transferred += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk)
+    hooks.progress(transferred)
+  })
+  source.once('error', done)
+  target.once('error', done)
+  target.once('finish', () => done())
+  source.pipe(target)
+  return {
+    pause: () => source.pause(),
+    resume: () => source.resume(),
+    cancel: () => { source.unpipe(target); source.destroy(); target.destroy() }
   }
 }
 
@@ -226,9 +387,41 @@ function validateRemotePath(path: string): string {
   return normalizeRemotePath(path)
 }
 
-function modeType(mode = 0): SftpEntry['type'] {
+function validateLocalPath(path: string): string {
+  if (typeof path !== 'string' || !isAbsolute(path) || path.length > 32767 || !existsSync(path)) throw appError('SFTP_LOCAL_PATH_INVALID', 'Local path is invalid or no longer exists')
+  return path
+}
+
+function validateLocalDirectory(path: string): string {
+  const localPath = validateLocalPath(path)
+  if (!lstatSync(localPath).isDirectory()) throw appError('SFTP_LOCAL_PATH_INVALID', 'Choose a local folder')
+  return localPath
+}
+
+function modeType(mode = 0): SftpEntryType {
   const kind = mode & 0o170000
   return kind === 0o040000 ? 'directory' : kind === 0o120000 ? 'link' : 'file'
+}
+
+function pathDepth(path: string): number {
+  return path.split('/').filter(Boolean).length
+}
+
+function safeLocalFileName(name: string): string {
+  const windowsStem = name.split('.')[0].toUpperCase()
+  const windowsReserved = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsStem)
+  const invalid = !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0') || (process.platform === 'win32' && (/[\\:*?"<>|]/.test(name) || /[. ]$/.test(name) || windowsReserved))
+  if (invalid) throw appError('TRANSFER_FILENAME_UNSUPPORTED', `Remote filename is not supported on this computer: ${name}`)
+  return name
+}
+
+function assertUniqueLocalTargets(files: FilePlan[]): void {
+  const targets = new Set<string>()
+  for (const file of files) {
+    const key = process.platform === 'win32' ? file.localPath.toLocaleLowerCase() : file.localPath
+    if (targets.has(key)) throw appError('TRANSFER_DUPLICATE_TARGET', `Remote names collide on this computer: ${file.relativePath}`)
+    targets.add(key)
+  }
 }
 
 function toSftpError(error: unknown): Error & { code: string } {

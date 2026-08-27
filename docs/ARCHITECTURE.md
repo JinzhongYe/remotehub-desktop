@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 4 交付连接管理、系统凭据引用、Host Key 固定、多个独立 SSH/SFTP/串口工作区；所有设备与远程连接仍在 Main 进程实现。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 5 交付连接管理、系统凭据引用、Host Key 固定、多个独立 SSH/SFTP/串口工作区和受控 SFTP 传输队列；所有设备与远程连接仍在 Main 进程实现。
 
 ## Electron 分层
 
@@ -16,7 +16,7 @@ Vue Renderer
 Electron Main
   ├─ IPC handlers
   ├─ SessionManager
-  ├─ SSHService / SFTPService
+  ├─ SSHService / SFTPService / TransferManager
   ├─ DatabaseService / Adapters
   ├─ StorageService（better-sqlite3）
   └─ CredentialService（系统钥匙串）
@@ -39,7 +39,9 @@ connections:test
 groups:save
 groups:delete
 ssh:connect / ssh:trustHostKey / ssh:write / ssh:resize / ssh:disconnect
-sftp:connect / sftp:list / sftp:upload / sftp:download / sftp:mkdir / sftp:rename / sftp:remove / sftp:disconnect
+sftp:connect / sftp:list / sftp:mkdir / sftp:rename / sftp:remove / sftp:disconnect
+sftp:enqueueUploads / sftp:enqueueDownload / sftp:listTransfers
+sftp:pauseTransfer / sftp:resumeTransfer / sftp:cancelTransfer / sftp:retryTransfer / sftp:clearFinishedTransfers
 serial:listPorts / serial:connect / serial:write / serial:disconnect
 ```
 
@@ -64,7 +66,8 @@ sessionId、connectionId、状态、错误码、展示元数据
 ## 服务边界
 
 - `SSHService`：连接、Shell、输入输出、resize、重连、Host Key 校验。
-- `SFTPService`：独立 SSH/SFTP 会话、目录、文件信息和基础传输进度。
+- `SFTPService`：独立 SSH/SFTP 会话、目录操作、递归传输计划、覆盖检查和文件流适配。
+- `TransferManager`：内存队列、双并发调度、任务状态、进度限流、暂停/继续、取消和重试。
 - `SerialService`：跨平台设备枚举、串口会话、输入输出和连接测试。
 - `DatabaseService`：统一 Adapter 接口；第一阶段实现 MySQL、PostgreSQL、SQLite。
 - `StorageService`：本地 SQLite 只保存连接元数据和 `credentialId`，不保存密码。
@@ -123,3 +126,7 @@ SSH Terminal 打开时，Renderer 只提交 `connectionId`。Main 进程从 Stor
 ## Phase 4 运行路径
 
 SFTP Tab 使用独立 `ssh2` Client 和 SFTP Session，并复用同一连接资产的凭据与 Host Key 固定策略。Renderer 只传递受校验的远程路径与用户通过系统文件对话框/拖放选择的本地路径；目录列表和传输进度通过序列化 IPC 返回。串口资产使用 `host` 保存设备路径、`port` 保存波特率，Main 进程通过 `serialport` 持有会话并向独立 xterm.js Tab 推送数据。关闭 Tab 或应用时会释放 SSH、SFTP 与串口资源。
+
+## Phase 5 运行路径
+
+SFTPService 先递归生成文件传输计划并检查同名目标；Renderer 确认覆盖后，文件任务才会进入 Main 进程的 TransferManager。队列同时运行最多两个流任务，Renderer 仅接收限频后的可序列化任务快照。运行中的流可暂停和继续；取消会销毁两端流，失败或取消后重试会从零开始并覆盖不完整文件。关闭 SFTP Session 时，队列会取消并清理该 Session 的全部任务。目录深度、文件数量、绝对本地路径和跨平台文件名都在 Main 进程校验。
