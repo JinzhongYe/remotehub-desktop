@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 import type { SshDataEvent, SshSessionStatus, SshStatusEvent } from '../../shared/ssh'
 import { t } from '../i18n'
 
-const props = defineProps<{ connectionId: string }>()
+const props = defineProps<{ connectionId: string; active: boolean }>()
 
 const terminalHost = ref<HTMLElement | null>(null)
 const status = ref<SshSessionStatus>('connecting')
 const statusMessage = ref('')
+const pendingFingerprint = ref('')
+const contextMenu = ref<{ x: number; y: number } | null>(null)
 
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -20,6 +22,7 @@ let removeDataListener: (() => void) | undefined
 let removeStatusListener: (() => void) | undefined
 let removeResizeListener: (() => void) | undefined
 let removeInputListener: (() => void) | undefined
+let removeContextMenuListener: (() => void) | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
 
@@ -32,9 +35,11 @@ const statusLabel = (): string => {
 
 function handleData(event: SshDataEvent): void {
   if (event.sessionId !== sessionId) {
-    const queued = pendingData.get(event.sessionId) || []
-    queued.push(event.data)
-    pendingData.set(event.sessionId, queued)
+    if (!sessionId && status.value === 'connecting') {
+      const queued = pendingData.get(event.sessionId) || []
+      queued.push(event.data)
+      pendingData.set(event.sessionId, queued)
+    }
     return
   }
   terminal?.write(event.data)
@@ -42,7 +47,7 @@ function handleData(event: SshDataEvent): void {
 
 function handleStatus(event: SshStatusEvent): void {
   if (event.sessionId !== sessionId) {
-    pendingStatus.set(event.sessionId, event)
+    if (!sessionId && status.value === 'connecting') pendingStatus.set(event.sessionId, event)
     return
   }
   status.value = event.status
@@ -52,13 +57,13 @@ function handleStatus(event: SshStatusEvent): void {
 function flushPending(id: string): void {
   const queued = pendingData.get(id) || []
   queued.forEach((data) => terminal?.write(data))
-  pendingData.delete(id)
   const previousStatus = pendingStatus.get(id)
   if (previousStatus) {
     status.value = previousStatus.status
     statusMessage.value = previousStatus.message || ''
-    pendingStatus.delete(id)
   }
+  pendingData.clear()
+  pendingStatus.clear()
 }
 
 function resizeTerminal(): void {
@@ -78,11 +83,21 @@ async function connect(): Promise<void> {
   }
   status.value = 'connecting'
   statusMessage.value = ''
+  pendingFingerprint.value = ''
   pendingData.clear()
   pendingStatus.clear()
   terminal?.clear()
   try {
     const result = await window.api.ssh.connect(props.connectionId)
+    if (result.trustRequired) {
+      if (disposed) return
+      pendingData.clear()
+      pendingStatus.clear()
+      pendingFingerprint.value = result.fingerprint
+      status.value = 'error'
+      statusMessage.value = ''
+      return
+    }
     if (disposed) {
       await window.api.ssh.disconnect(result.sessionId).catch(() => undefined)
       return
@@ -92,6 +107,39 @@ async function connect(): Promise<void> {
     resizeTerminal()
   } catch (error) {
     status.value = 'error'
+    statusMessage.value = error instanceof Error ? error.message : t('sshUnavailable')
+  }
+}
+
+async function trustHostKey(): Promise<void> {
+  const fingerprint = pendingFingerprint.value
+  if (!fingerprint) return
+  try {
+    await window.api.ssh.trustHostKey(props.connectionId, fingerprint)
+    await connect()
+  } catch (error) {
+    status.value = 'error'
+    statusMessage.value = error instanceof Error ? error.message : t('sshUnavailable')
+  }
+}
+
+function showContextMenu(event: MouseEvent): void {
+  event.preventDefault()
+  if (!terminal?.hasSelection()) {
+    contextMenu.value = null
+    return
+  }
+  contextMenu.value = { x: Math.min(event.clientX, window.innerWidth - 90), y: Math.min(event.clientY, window.innerHeight - 40) }
+}
+
+async function copySelection(): Promise<void> {
+  const selection = terminal?.getSelection()
+  contextMenu.value = null
+  if (!selection) return
+  try {
+    await window.api.app.copyText(selection)
+    terminal?.focus()
+  } catch (error) {
     statusMessage.value = error instanceof Error ? error.message : t('sshUnavailable')
   }
 }
@@ -129,8 +177,15 @@ onMounted(() => {
   const onWindowResize = (): void => resizeTerminal()
   window.addEventListener('resize', onWindowResize)
   removeResizeListener = () => window.removeEventListener('resize', onWindowResize)
+  const closeContextMenu = (): void => { contextMenu.value = null }
+  document.addEventListener('pointerdown', closeContextMenu)
+  removeContextMenuListener = () => document.removeEventListener('pointerdown', closeContextMenu)
   void connect()
   resizeTerminal()
+})
+
+watch(() => props.active, (active) => {
+  if (active) void nextTick(resizeTerminal)
 })
 
 onBeforeUnmount(() => {
@@ -139,6 +194,7 @@ onBeforeUnmount(() => {
   removeStatusListener?.()
   removeResizeListener?.()
   removeInputListener?.()
+  removeContextMenuListener?.()
   if (sessionId) void window.api.ssh.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
 })
@@ -151,9 +207,15 @@ onBeforeUnmount(() => {
       <span class="terminal-title">Terminal</span>
       <span class="terminal-status" :class="status"><span class="status-dot"></span>{{ statusLabel() }}</span>
       <span v-if="statusMessage" class="terminal-message" :title="statusMessage">{{ statusMessage }}</span>
-      <button v-if="status === 'error' || status === 'closed'" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button>
+      <button v-if="!pendingFingerprint && (status === 'error' || status === 'closed')" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button>
       <button v-else-if="status === 'connected'" class="toolbar-button muted" @click="disconnect">{{ t('disconnect') }}</button>
     </div>
-    <div ref="terminalHost" class="terminal-host"></div>
+    <div v-if="pendingFingerprint" class="terminal-host-key">
+      <span>{{ t('hostKeyPrompt') }}</span><code>{{ t('hostKeyFingerprint') }}: {{ pendingFingerprint }}</code><button class="toolbar-button" @click="trustHostKey">{{ t('trustHostKey') }}</button>
+    </div>
+    <div ref="terminalHost" class="terminal-host" @contextmenu="showContextMenu"></div>
+    <div v-if="contextMenu" class="terminal-context-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @pointerdown.stop>
+      <button @click="copySelection">{{ t('copy') }}</button>
+    </div>
   </section>
 </template>

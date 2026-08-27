@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import type { Connection } from '../../shared/types'
 import { sshErrorCode, type SshConnectResult, type SshDataEvent, type SshStatusEvent } from '../../shared/ssh'
 import { CredentialService } from './credentials'
-import { appError } from './storage'
+import { fingerprintHostKey, hostKeyState } from './host-key'
+import { appError, StorageService } from './storage'
 
 type EventSink = (channel: 'ssh:data' | 'ssh:status', payload: SshDataEvent | SshStatusEvent) => void
 
@@ -34,8 +35,9 @@ const loadNativeModule = createRequire(__filename)
 
 export class SshService {
   private readonly sessions = new Map<string, SshSession>()
+  private readonly pendingHostKeys = new Map<string, string>()
 
-  constructor(private readonly credentials: CredentialService, private readonly send: EventSink) {}
+  constructor(private readonly storage: StorageService, private readonly credentials: CredentialService, private readonly send: EventSink) {}
 
   async connect(connection: Connection): Promise<SshConnectResult> {
     if (connection.type !== 'ssh') throw appError('SSH_CONNECTION_INVALID', 'Only SSH connections can open a terminal')
@@ -50,8 +52,22 @@ export class SshService {
 
     return new Promise((resolve, reject) => {
       let settled = false
+      let receivedHostKey: string | undefined
       const fail = (error: unknown): void => {
-        const appFailure = toSshError(error)
+        if (!this.sessions.has(sessionId)) return
+        const keyState = receivedHostKey ? hostKeyState(connection.hostKeyFingerprint, receivedHostKey) : undefined
+        if (keyState === 'new') {
+          this.pendingHostKeys.set(connection.id, receivedHostKey!)
+          this.closeSession(sessionId, false)
+          if (!settled) {
+            settled = true
+            resolve({ trustRequired: true, fingerprint: receivedHostKey! })
+          }
+          return
+        }
+        const appFailure = keyState === 'changed'
+          ? appError('SSH_HOST_KEY_CHANGED', `Host key changed for ${connection.host}:${connection.port}. Expected ${connection.hostKeyFingerprint}, received ${receivedHostKey}. Connection blocked.`)
+          : toSshError(error)
         this.emitStatus({ sessionId, status: 'error', code: appFailure.code, message: appFailure.message })
         this.closeSession(sessionId, false)
         if (!settled) {
@@ -70,6 +86,7 @@ export class SshService {
           stream.on('end', () => this.closeSession(sessionId, true))
           if (!settled) {
             settled = true
+            try { this.storage.markConnected(connection.id, Date.now()) } catch { /* connection metadata is best effort */ }
             this.emitStatus({ sessionId, status: 'connected' })
             resolve({ sessionId })
           }
@@ -87,12 +104,25 @@ export class SshService {
           readyTimeout: 10000,
           keepaliveInterval: 10000,
           keepaliveCountMax: 3,
+          hostVerifier: (key: Buffer) => {
+            receivedHostKey = fingerprintHostKey(key)
+            return hostKeyState(connection.hostKeyFingerprint, receivedHostKey) === 'trusted'
+          },
           ...(connection.authType === 'privateKey' ? { privateKey: credential } : { password: credential })
         })
       } catch (error) {
         fail(error)
       }
     })
+  }
+
+  trustHostKey(connectionId: string, fingerprint: string): void {
+    if (this.storage.getConnection(connectionId)?.hostKeyFingerprint === fingerprint) return
+    if (typeof connectionId !== 'string' || connectionId.length > 100 || this.pendingHostKeys.get(connectionId) !== fingerprint) {
+      throw appError('SSH_HOST_KEY_INVALID', 'Host key confirmation is invalid or expired')
+    }
+    this.storage.trustHostKey(connectionId, fingerprint)
+    this.pendingHostKeys.delete(connectionId)
   }
 
   write(sessionId: string, data: string): void {
@@ -118,6 +148,7 @@ export class SshService {
 
   dispose(): void {
     for (const sessionId of this.sessions.keys()) this.closeSession(sessionId, false)
+    this.pendingHostKeys.clear()
   }
 
   private createClient(): SshClientLike {

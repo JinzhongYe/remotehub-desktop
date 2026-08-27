@@ -13,6 +13,7 @@ export interface Connection {
   databaseType?: DatabaseType
   database?: string
   credentialId?: string
+  hostKeyFingerprint?: string
   groupId?: string
   favorite: boolean
   sortOrder: number

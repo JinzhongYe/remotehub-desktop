@@ -26,5 +26,8 @@ describe('Phase 2 SSH foundation', () => {
   it('distinguishes rejected credentials from network failures', () => {
     expect(sshErrorCode(undefined, 'client-authentication')).toBe('SSH_AUTHENTICATION_FAILED')
     expect(sshErrorCode('ETIMEDOUT')).toBe('SSH_TIMEOUT')
+    expect(sshErrorCode('ENETUNREACH')).toBe('SSH_NETWORK_UNREACHABLE')
+    expect(sshErrorCode('ECONNRESET')).toBe('SSH_CONNECTION_RESET')
+    expect(sshErrorCode(undefined, 'handshake')).toBe('SSH_HANDSHAKE_FAILED')
   })
 })

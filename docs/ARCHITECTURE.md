@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP 和数据库能力。当前 Phase 2 交付连接管理、系统凭据引用、TCP 可达性测试和基础 SSH Terminal；所有远程连接仍在 Main 进程实现。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP 和数据库能力。当前 Phase 3 交付连接管理、系统凭据引用、Host Key 固定、多个独立 SSH Terminal 和 TCP 可达性测试；所有远程连接仍在 Main 进程实现。
 
 ## Electron 分层
 
@@ -29,7 +29,7 @@ Renderer 禁止直接访问 `fs`、`ssh2`、数据库驱动、私钥和密码。
 IPC 通道按领域命名：
 
 ```text
-app:getInfo
+app:getInfo / app:copyText
 connections:list
 connections:save
 connections:delete
@@ -38,7 +38,7 @@ connections:reorder
 connections:test
 groups:save
 groups:delete
-ssh:connect / ssh:write / ssh:resize / ssh:disconnect
+ssh:connect / ssh:trustHostKey / ssh:write / ssh:resize / ssh:disconnect
 ```
 
 后续扩展：
@@ -82,6 +82,7 @@ interface Connection {
   databaseType?: 'mysql' | 'postgres' | 'sqlite'
   database?: string
   credentialId?: string
+  hostKeyFingerprint?: string
   groupId?: string
   favorite?: boolean
   sortOrder: number
@@ -96,7 +97,7 @@ interface Connection {
 - BrowserWindow 开启 `contextIsolation`，关闭 `nodeIntegration`。
 - preload 只暴露白名单 API，不暴露通用 `ipcRenderer`。
 - 密码、Token、私钥口令只进入系统凭据存储，日志中禁止出现。
-- Host Key 指纹确认将在 Phase 3 接入；当前 SSH 基础连接尚未持久化指纹。
+- 首次 SSH 连接必须确认 SHA-256 Host Key 指纹；后续指纹变化会阻断连接，修改主机或端口时清除旧指纹。
 - 默认本地优先，远程数据不自动上传云端。
 - 连接名、主机、端口、SQL 和文件路径在 Main 进程再次校验。
 
@@ -110,4 +111,8 @@ Renderer 通过白名单 IPC 管理连接与分组。连接顺序、最近成功
 
 ## Phase 2 运行路径
 
-SSH Terminal 打开时，Renderer 只提交 `connectionId`。Main 进程从 StorageService 读取 SSH 元数据，从 CredentialService 读取系统加密凭据，再由 `SshService` 创建 `ssh2` Client 和 shell stream。终端输入、输出和状态通过 `ssh:*` 白名单 IPC 传输；关闭工作区或应用退出时释放 stream 和 client。当前实现支持密码 / Private Key、UTF-8、resize、断开和重连，Host Key 指纹及 Private Key 口令将在后续稳定性阶段补齐。
+SSH Terminal 打开时，Renderer 只提交 `connectionId`。Main 进程从 StorageService 读取 SSH 元数据，从 CredentialService 读取系统加密凭据，再由 `SshService` 创建 `ssh2` Client 和 shell stream。终端输入、输出和状态通过 `ssh:*` 白名单 IPC 传输；关闭工作区或应用退出时释放 stream 和 client。当前实现支持密码 / Private Key、UTF-8、resize、断开和重连；Private Key 口令仍待后续认证能力补齐。
+
+## Phase 3 运行路径
+
+每个 Workspace Tab 独立创建和持有 SSH `sessionId`，切换 Tab 不卸载 Terminal，关闭单个 Tab 只释放对应 Session。同一连接资产可以重复打开；数据库资产也使用独立 SQL Tab，实际数据库 Session 在 Phase 6–8 Adapter 接入后挂载。首次 SSH 握手返回 SHA-256 Host Key 指纹，用户确认后持久化；已保存指纹不匹配时直接阻断。SSH 使用十秒握手超时、十秒心跳和三次失联阈值，并将网络、认证、握手错误映射为稳定代码。

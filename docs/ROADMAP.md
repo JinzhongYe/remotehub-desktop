@@ -24,12 +24,14 @@
 - `ssh2` SSHService 和白名单 IPC。
 - xterm.js Terminal、输入输出、resize、UTF-8、断开和重连。
 - 密码和 Private Key 凭据从系统加密存储读取。
-- 当前限制：Private Key 口令、Host Key 指纹确认和多终端 Tab 仍属于后续稳定性迭代。
+- 当前限制：Private Key 口令仍属于后续认证能力迭代。
 
-## Phase 3 — SSH 稳定性
+## Phase 3 — SSH 稳定性（已完成）
 
 - Host Key 指纹确认和变更阻断。
 - 超时、重连、心跳、资源释放和标准错误码。
+- 同一 SSH / 数据库资产可打开多个独立 Workspace Tab；数据库网络会话随 Phase 6–8 Adapter 接入。
+- SSH 终端选中文本后支持右键复制；连接分组支持折叠和更清晰的字号。
 
 ## Phase 4 — SFTP
 
