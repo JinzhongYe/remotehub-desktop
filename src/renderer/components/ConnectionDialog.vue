@@ -8,7 +8,7 @@ import { t } from '../i18n'
 const props = defineProps<{ open: boolean; connection?: Connection | null; groups: Group[] }>()
 const emit = defineEmits<{ close: []; save: [value: ConnectionInput, credential?: string, clearCredential?: boolean, privateKeyPath?: string] }>()
 
-const form = reactive<ConnectionInput>({ name: '', type: 'ssh', host: '', port: 22, username: '', authType: 'privateKey', databaseType: 'postgres', database: '', favorite: false })
+const form = reactive<ConnectionInput>({ name: '', type: 'ssh', host: '', port: 22, username: '', authType: 'privateKey', databaseType: 'mysql', database: '', favorite: false })
 const credential = ref('')
 const clearCredential = ref(false)
 const privateKeyPath = ref('')
@@ -21,10 +21,10 @@ watch(() => [props.open, props.connection], () => {
   form.name = item?.name || ''
   form.type = item?.type || 'ssh'
   form.host = item?.host || ''
-  form.port = item?.port || (form.type === 'database' ? 5432 : form.type === 'serial' ? 115200 : 22)
+  form.port = item?.port || (form.type === 'database' ? 3306 : form.type === 'serial' ? 115200 : 22)
   form.username = item?.username || ''
-  form.authType = item?.authType || 'privateKey'
-  form.databaseType = item?.databaseType || 'postgres'
+  form.authType = form.type === 'database' ? 'password' : item?.authType || 'privateKey'
+  form.databaseType = item?.databaseType || 'mysql'
   form.database = item?.database || ''
   form.credentialId = item?.credentialId
   form.groupId = item?.groupId
@@ -37,11 +37,14 @@ watch(() => [props.open, props.connection], () => {
 }, { immediate: true })
 
 function submit(): void {
-  emit('save', { ...form, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim() }, credential.value || undefined, clearCredential.value, privateKeyPath.value || undefined)
+  emit('save', { ...form, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim(), authType: form.type === 'database' ? 'password' : form.authType }, credential.value || undefined, clearCredential.value, form.type === 'ssh' ? privateKeyPath.value || undefined : undefined)
 }
 
 function changeType(): void {
-  if (form.type === 'database' && (form.port === 22 || form.port === 115200 || form.port > 65535)) form.port = 5432
+  if (form.type === 'database') {
+    if (form.port === 22 || form.port === 115200 || form.port > 65535) form.port = form.databaseType === 'mysql' ? 3306 : 5432
+    form.authType = 'password'
+  }
   if (form.type === 'ssh' && (form.port === 5432 || form.port === 115200 || form.port > 65535)) form.port = 22
   if (form.type === 'serial') {
     form.port = 115200
@@ -50,6 +53,11 @@ function changeType(): void {
   } else if (!form.authType) {
     form.authType = 'privateKey'
   }
+}
+
+function changeDatabaseType(): void {
+  const previousDefaults = form.port === 3306 || form.port === 5432
+  if (previousDefaults) form.port = form.databaseType === 'mysql' ? 3306 : 5432
 }
 
 async function loadSerialPorts(): Promise<void> {
@@ -84,11 +92,11 @@ async function choosePrivateKey(): Promise<void> {
         <label class="field"><span>{{ form.type === 'serial' ? t('baudRate') : t('port') }}</span><input v-model.number="form.port" type="number" min="1" :max="form.type === 'serial' ? 4000000 : 65535" required></label>
         <label class="field wide"><span>{{ form.type === 'serial' ? t('serialPath') : t('host') }}</span><span v-if="form.type === 'serial'" class="input-with-action"><input v-model="form.host" required list="serial-port-list" placeholder="COM3 / /dev/ttyUSB0"><button type="button" class="button secondary" @click="loadSerialPorts">{{ t('refresh') }}</button></span><input v-else v-model="form.host" required placeholder="192.168.1.100 / db.example.com"><datalist id="serial-port-list"><option v-for="item in serialPorts" :key="item.path" :value="item.path">{{ item.manufacturer }}</option></datalist><small v-if="form.type === 'serial' && serialPortsError" class="field-error">{{ serialPortsError }}</small></label>
         <template v-if="form.type !== 'serial'">
-          <label class="field"><span>{{ t('username') }}</span><input v-model="form.username" :placeholder="t('optional')"></label>
-          <label class="field"><span>{{ t('authType') }}</span><select v-model="form.authType"><option value="privateKey">Private Key</option><option value="password">{{ t('passwordVault') }}</option></select></label>
+          <label class="field"><span>{{ t('username') }}</span><input v-model="form.username" :required="form.type === 'database'" :placeholder="form.type === 'database' ? 'root / app_user' : t('optional')"></label>
+          <label v-if="form.type === 'ssh'" class="field"><span>{{ t('authType') }}</span><select v-model="form.authType"><option value="privateKey">Private Key</option><option value="password">{{ t('passwordVault') }}</option></select></label>
         </template>
         <template v-if="form.type === 'database'">
-          <label class="field"><span>{{ t('databaseType') }}</span><select v-model="form.databaseType"><option value="postgres">PostgreSQL</option><option value="mysql">MySQL</option><option value="sqlite">SQLite</option></select></label>
+          <label class="field"><span>{{ t('databaseType') }}</span><select v-model="form.databaseType" @change="changeDatabaseType"><option value="mysql">MySQL · Phase 6</option><option value="postgres">PostgreSQL · Phase 7</option><option value="sqlite">SQLite · Phase 8</option></select></label>
           <label class="field"><span>{{ t('defaultDatabase') }}</span><input v-model="form.database" :placeholder="t('optional')"></label>
         </template>
         <label class="field"><span>{{ t('group') }}</span><select v-model="form.groupId"><option :value="undefined">{{ t('noGroup') }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></label>

@@ -13,6 +13,7 @@ if errorlevel 1 goto :missing_npm
 
 if not exist "node_modules\.bin\electron.cmd" goto :install_dependencies
 if not exist "node_modules\serialport\package.json" goto :install_dependencies
+if not exist "node_modules\mysql2\package.json" goto :install_dependencies
 goto :dependencies_ready
 
 :install_dependencies

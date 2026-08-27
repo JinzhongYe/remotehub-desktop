@@ -58,7 +58,7 @@ export interface ConnectionOrderItem {
 
 export interface ConnectionTestResult {
   ok: boolean
-  code: 'OK' | 'CONNECTION_TIMEOUT' | 'CONNECTION_REFUSED' | 'HOST_NOT_FOUND' | 'NETWORK_UNREACHABLE' | 'CONNECTION_FAILED'
+  code: 'OK' | 'CONNECTION_TIMEOUT' | 'CONNECTION_REFUSED' | 'HOST_NOT_FOUND' | 'NETWORK_UNREACHABLE' | 'CONNECTION_FAILED' | 'AUTHENTICATION_FAILED' | 'DATABASE_NOT_FOUND' | 'DATABASE_FAILED'
   message: string
   latencyMs: number
   testedAt: number

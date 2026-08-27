@@ -11,11 +11,26 @@ const messages = {
   }
 } as const
 
+const phase6Messages = {
+  'zh-CN': {
+    phaseReady: 'Phase 6 · MySQL 工作区', databasePhase: 'Phase 6 MySQL · Phase 7–8 扩展数据库',
+    mysqlWorkspace: 'MySQL 工作区', noDatabase: '无数据库', systemDatabase: '系统库', schemaExplorer: '结构浏览', chooseDatabase: '请选择数据库', emptyDatabase: '数据库中没有表', doubleClickPreview: '双击预览数据', insertName: '插入表名', sqlEditor: 'SQL 编辑器', runShortcut: 'Ctrl/⌘ + Enter 执行选中内容或全文', runQuery: '执行', runningQuery: '执行中…', resultGrid: '查询结果', previousPage: '上一页', nextPage: '下一页', pageNumber: '第 {page} 页', queryReady: '输入 SQL 后执行，单页最多 200 行', queryCompleted: '执行完成', affectedRows: '影响 {count} 行 · {duration} ms', queryRows: '返回 {count} 行 · {duration} ms', databaseUnavailable: '数据库不可用'
+  },
+  en: {
+    phaseReady: 'Phase 6 · MySQL Workspace', databasePhase: 'Phase 6 MySQL · more adapters in Phases 7–8',
+    mysqlWorkspace: 'MySQL Workspace', noDatabase: 'No database', systemDatabase: 'system', schemaExplorer: 'Schema Explorer', chooseDatabase: 'Choose a database', emptyDatabase: 'No tables in this database', doubleClickPreview: 'Double-click to preview rows', insertName: 'Insert table name', sqlEditor: 'SQL Editor', runShortcut: 'Ctrl/⌘ + Enter runs selection or document', runQuery: 'Run', runningQuery: 'Running…', resultGrid: 'Result Grid', previousPage: 'Previous', nextPage: 'Next', pageNumber: 'Page {page}', queryReady: 'Run SQL to view up to 200 rows per page', queryCompleted: 'Query completed', affectedRows: '{count} rows affected · {duration} ms', queryRows: '{count} rows · {duration} ms', databaseUnavailable: 'Database is unavailable'
+  }
+} as const
+
+type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en
+
 const stored = localStorage.getItem('remotehub.locale')
 export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
 
-export function t(key: keyof typeof messages.en, values: Record<string, string | number> = {}): string {
-  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), messages[locale.value][key] as string)
+export function t(key: MessageKey, values: Record<string, string | number> = {}): string {
+  const overrides = phase6Messages[locale.value] as Record<string, string>
+  const defaults = messages[locale.value] as Record<string, string>
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), overrides[key] || defaults[key] || key)
 }
 
 export function toggleLocale(): void {

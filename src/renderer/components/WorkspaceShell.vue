@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { defineAsyncComponent } from 'vue'
 import type { Connection } from '../../shared/types'
 import { useConnectionStore } from '../stores/connection'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -6,6 +7,8 @@ import TerminalPane from './TerminalPane.vue'
 import SerialTerminalPane from './SerialTerminalPane.vue'
 import SftpPane from './SftpPane.vue'
 import { t } from '../i18n'
+
+const DatabasePane = defineAsyncComponent(() => import('./DatabasePane.vue'))
 
 defineProps<{ shortcutModifier: string }>()
 const workspace = useWorkspaceStore()
@@ -49,6 +52,7 @@ function openActiveAgain(): void {
         <TerminalPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" v-show="workspace.activeId === tab.id" :connection-id="tab.connectionId!" :active="workspace.activeId === tab.id" />
         <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" v-show="workspace.activeId === tab.id" :connection-id="tab.connectionId!" :active="workspace.activeId === tab.id" />
         <SftpPane v-else-if="tab.type === 'sftp' && connectionFor(tab.connectionId)?.type === 'ssh'" v-show="workspace.activeId === tab.id" :connection-id="tab.connectionId!" />
+        <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" v-show="workspace.activeId === tab.id" :connection-id="tab.connectionId!" />
         <div v-else-if="tab.connectionId" v-show="workspace.activeId === tab.id" class="workspace-placeholder">
           <div class="connection-overview">
             <div class="overview-icon">{{ connectionFor(tab.connectionId)?.type === 'database' ? 'DB' : '›_' }}</div>

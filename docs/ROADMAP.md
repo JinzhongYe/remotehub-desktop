@@ -49,9 +49,13 @@
 - 上传与下载批量冲突检测、覆盖确认，以及目录阻塞和跨平台文件名冲突保护。
 - 单次最多 5000 个文件、100 层目录，并限制 Renderer 进度事件频率。
 
-## Phase 6 — MySQL
+## Phase 6 — MySQL（已完成）
 
-- DatabaseAdapter、数据库/表/字段 Explorer、SQL Editor、Result Grid。
+- MySQL DatabaseAdapter、加密凭据读取、独立数据库 Session 和真实认证测试。
+- 数据库、表、视图和字段 Explorer，支持双击表生成预览查询。
+- CodeMirror MySQL SQL Editor，支持选中执行和 `Ctrl/⌘ + Enter` 快捷键。
+- Result Grid、影响行数、耗时、错误映射，以及 `SELECT`/`WITH` 服务端分页。
+- 单页默认 200 行、最大 500 行、SQL 最大 1 MB、查询 30 秒超时和单 Session 串行保护。
 
 ## Phase 7 — PostgreSQL
 

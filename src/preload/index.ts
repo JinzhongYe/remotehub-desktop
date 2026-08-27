@@ -3,6 +3,7 @@ import type { ConnectionOrderItem, ConnectionSaveRequest } from '../shared/types
 import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
 import type { SftpTransferEvent } from '../shared/sftp'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
+import type { DatabaseQueryRequest } from '../shared/database'
 
 const api = {
   app: {
@@ -79,6 +80,15 @@ const api = {
       ipcRenderer.on('serial:status', handler)
       return () => ipcRenderer.removeListener('serial:status', handler)
     }
+  },
+  database: {
+    connect: (connectionId: string) => ipcRenderer.invoke('database:connect', connectionId),
+    listDatabases: (sessionId: string) => ipcRenderer.invoke('database:listDatabases', sessionId),
+    useDatabase: (sessionId: string, name: string) => ipcRenderer.invoke('database:useDatabase', sessionId, name),
+    listTables: (sessionId: string, name: string) => ipcRenderer.invoke('database:listTables', sessionId, name),
+    listColumns: (sessionId: string, name: string, table: string) => ipcRenderer.invoke('database:listColumns', sessionId, name, table),
+    query: (sessionId: string, request: DatabaseQueryRequest) => ipcRenderer.invoke('database:query', sessionId, request),
+    disconnect: (sessionId: string) => ipcRenderer.invoke('database:disconnect', sessionId)
   },
   groups: {
     save: (name: string, id?: string) => ipcRenderer.invoke('groups:save', name, id),

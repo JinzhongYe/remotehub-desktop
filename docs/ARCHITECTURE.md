@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 5 交付连接管理、系统凭据引用、Host Key 固定、多个独立 SSH/SFTP/串口工作区和受控 SFTP 传输队列；所有设备与远程连接仍在 Main 进程实现。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 6 交付连接管理、系统凭据引用、Host Key 固定、独立 SSH/SFTP/串口工作区、受控 SFTP 传输队列和 MySQL 工作区；所有设备与远程连接仍在 Main 进程实现。
 
 ## Electron 分层
 
@@ -43,12 +43,14 @@ sftp:connect / sftp:list / sftp:mkdir / sftp:rename / sftp:remove / sftp:disconn
 sftp:enqueueUploads / sftp:enqueueDownload / sftp:listTransfers
 sftp:pauseTransfer / sftp:resumeTransfer / sftp:cancelTransfer / sftp:retryTransfer / sftp:clearFinishedTransfers
 serial:listPorts / serial:connect / serial:write / serial:disconnect
+database:connect / database:disconnect / database:listDatabases / database:useDatabase
+database:listTables / database:listColumns / database:query
 ```
 
 后续扩展：
 
 ```text
-database:connect / database:query / database:getTables
+database adapters: PostgreSQL / SQLite
 ```
 
 每个 handler 只负责输入校验、调用服务和错误映射；业务逻辑不写入 Vue 组件。
@@ -69,7 +71,8 @@ sessionId、connectionId、状态、错误码、展示元数据
 - `SFTPService`：独立 SSH/SFTP 会话、目录操作、递归传输计划、覆盖检查和文件流适配。
 - `TransferManager`：内存队列、双并发调度、任务状态、进度限流、暂停/继续、取消和重试。
 - `SerialService`：跨平台设备枚举、串口会话、输入输出和连接测试。
-- `DatabaseService`：统一 Adapter 接口；第一阶段实现 MySQL、PostgreSQL、SQLite。
+- `DatabaseService`：独立数据库 Session、并发保护和统一 Adapter 接口；Phase 6 接入 MySQLAdapter。
+- `MySQLAdapter`：密码认证、结构元数据、数据库切换、查询分页、结果序列化和稳定错误映射。
 - `StorageService`：本地 SQLite 只保存连接元数据和 `credentialId`，不保存密码。
 - `CredentialService`：通过 Electron `safeStorage` 对接 macOS Keychain、Windows DPAPI 和 Linux Secret Service；Linux 明文后端不可用。
 
@@ -113,7 +116,7 @@ Renderer 通过 `connections:list/save/delete` 验证 IPC；Main 进程打开用
 
 ## Phase 1 运行路径
 
-Renderer 通过白名单 IPC 管理连接与分组。连接顺序、最近成功测试时间和随机 `credentialId` 写入 SQLite；敏感值由 Main 进程加密后写入权限受限的凭据文件。`connections:test` 只执行五秒超时的 TCP 可达性检查，并返回稳定错误码，不建立 SSH 或数据库会话。
+Renderer 通过白名单 IPC 管理连接与分组。连接顺序、最近成功测试时间和随机 `credentialId` 写入 SQLite；敏感值由 Main 进程加密后写入权限受限的凭据文件。SSH 和未接入的数据库 Adapter 使用五秒 TCP 可达性测试；Phase 6 起 MySQL 测试会建立短连接并验证认证，串口测试会短暂打开设备，所有路径都返回稳定错误码。
 
 ## Phase 2 运行路径
 
@@ -130,3 +133,7 @@ SFTP Tab 使用独立 `ssh2` Client 和 SFTP Session，并复用同一连接资�
 ## Phase 5 运行路径
 
 SFTPService 先递归生成文件传输计划并检查同名目标；Renderer 确认覆盖后，文件任务才会进入 Main 进程的 TransferManager。队列同时运行最多两个流任务，Renderer 仅接收限频后的可序列化任务快照。运行中的流可暂停和继续；取消会销毁两端流，失败或取消后重试会从零开始并覆盖不完整文件。关闭 SFTP Session 时，队列会取消并清理该 Session 的全部任务。目录深度、文件数量、绝对本地路径和跨平台文件名都在 Main 进程校验。
+
+## Phase 6 运行路径
+
+MySQL SQL Tab 创建独立 Database Session。Main 进程从 StorageService 读取连接元数据、从 CredentialService 解密密码，再由 MySQLAdapter 建立 `mysql2` 连接；Renderer 不接触驱动或密码。结构 Explorer 通过 `information_schema` 获取表和字段，SQL Editor 只提交 SQL、页码和页大小。`SELECT`/`WITH` 会追加受控 `LIMIT/OFFSET`；原语句已有顶层 `LIMIT` 时使用派生表包装，每页默认 200 行并多取一行判断下一页。其他语句直接执行。日期、大整数、二进制和对象在 Main 进程转换为可序列化单元格后才通过 IPC 返回。单个 Session 同时只执行一个查询，SQL 限制 1 MB，驱动查询超时为 30 秒，关闭 Tab 时销毁连接。

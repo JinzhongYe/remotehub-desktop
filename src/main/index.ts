@@ -5,17 +5,20 @@ import { registerConnectionIpc } from './ipc/connection.ipc'
 import { registerSshIpc } from './ipc/ssh.ipc'
 import { registerSftpIpc } from './ipc/sftp.ipc'
 import { registerSerialIpc } from './ipc/serial.ipc'
+import { registerDatabaseIpc } from './ipc/database.ipc'
 import { StorageService } from './services/storage'
 import { CredentialService } from './services/credentials'
 import { SshService } from './services/ssh'
 import { SftpService } from './services/sftp'
 import { SerialService } from './services/serial'
+import { DatabaseService } from './services/database'
 
 let mainWindow: BrowserWindow | null = null
 let storage: StorageService | null = null
 let ssh: SshService | null = null
 let sftp: SftpService | null = null
 let serial: SerialService | null = null
+let database: DatabaseService | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -50,11 +53,13 @@ app.whenReady().then(() => {
   ssh = new SshService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   sftp = new SftpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   serial = new SerialService(storage, (channel, payload) => mainWindow?.webContents.send(channel, payload))
+  database = new DatabaseService(storage, credentials)
   registerAppIpc()
-  registerConnectionIpc(storage, credentials, (path, baudRate) => serial!.test(path, baudRate))
+  registerConnectionIpc(storage, credentials, (path, baudRate) => serial!.test(path, baudRate), (connection) => database!.test(connection))
   registerSshIpc(storage, ssh)
   registerSftpIpc(storage, sftp)
   registerSerialIpc(storage, serial)
+  registerDatabaseIpc(storage, database)
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
@@ -68,5 +73,6 @@ app.on('before-quit', () => {
   ssh?.dispose()
   sftp?.dispose()
   serial?.dispose()
+  database?.dispose()
   storage?.close()
 })

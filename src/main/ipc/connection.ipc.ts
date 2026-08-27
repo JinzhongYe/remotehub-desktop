@@ -1,11 +1,11 @@
 import { ipcMain } from 'electron'
 import { createConnection } from 'node:net'
 import { connectionErrorCode } from '../../shared/connection'
-import type { ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestResult } from '../../shared/types'
+import type { Connection, ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestResult } from '../../shared/types'
 import { CredentialService } from '../services/credentials'
 import { appError, StorageService } from '../services/storage'
 
-export function registerConnectionIpc(storage: StorageService, credentials: CredentialService, testSerial?: (path: string, baudRate: number) => Promise<ConnectionTestResult>): void {
+export function registerConnectionIpc(storage: StorageService, credentials: CredentialService, testSerial?: (path: string, baudRate: number) => Promise<ConnectionTestResult>, testDatabase?: (connection: Connection) => Promise<ConnectionTestResult>): void {
   ipcMain.handle('connections:list', () => ({ connections: storage.listConnections(), groups: storage.listGroups() }))
   ipcMain.handle('connections:save', (_event, request: ConnectionSaveRequest) => {
     if (!request || typeof request !== 'object' || !request.connection || typeof request.connection !== 'object') throw appError('INVALID_CONNECTION', 'Connection input is invalid')
@@ -37,7 +37,9 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     if (!connection) return { ok: false, code: 'CONNECTION_FAILED', message: 'Connection not found', latencyMs: 0, testedAt: Date.now() } satisfies ConnectionTestResult
     const result = connection.type === 'serial' && testSerial
       ? await testSerial(connection.host, connection.port)
-      : await testTcpConnection(connection.host, connection.port)
+      : connection.type === 'database' && connection.databaseType === 'mysql' && testDatabase
+        ? await testDatabase(connection)
+        : await testTcpConnection(connection.host, connection.port)
     if (result.ok) storage.markConnected(id, result.testedAt)
     return result
   })
