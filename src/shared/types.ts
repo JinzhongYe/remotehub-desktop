@@ -1,4 +1,4 @@
-export type ConnectionType = 'ssh' | 'database'
+export type ConnectionType = 'ssh' | 'database' | 'serial'
 export type DatabaseType = 'mysql' | 'postgres' | 'sqlite'
 export type AuthType = 'password' | 'privateKey'
 
@@ -47,6 +47,7 @@ export interface Group {
 export interface ConnectionSaveRequest {
   connection: ConnectionInput
   credential?: string
+  privateKeyPath?: string
   clearCredential?: boolean
 }
 

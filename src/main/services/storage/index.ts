@@ -54,7 +54,7 @@ export class StorageService {
       CREATE TABLE IF NOT EXISTS connections (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK(type IN ('ssh', 'database')),
+        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial')),
         host TEXT NOT NULL,
         port INTEGER NOT NULL,
         username TEXT,
@@ -77,6 +77,7 @@ export class StorageService {
       ensureColumn(db, 'connections', 'sort_order', 'INTEGER NOT NULL DEFAULT 0')
       ensureColumn(db, 'connections', 'last_connected_at', 'INTEGER')
       ensureColumn(db, 'connections', 'host_key_fingerprint', 'TEXT')
+      migrateConnectionTypes(db)
       this.db = db
     } catch {
       // Native modules can be unavailable immediately after a dependency install.
@@ -278,20 +279,22 @@ function persistFallback(path: string, data: FallbackData): void {
 function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'createdAt' | 'updatedAt' | 'hostKeyFingerprint'> {
   const name = String(input.name || '').trim()
   const host = String(input.host || '').trim()
-  if (!name || !host) throw appError('INVALID_CONNECTION', '连接名称和主机地址不能为空')
+  if (!name || !host) throw appError('INVALID_CONNECTION', '连接名称和主机/串口地址不能为空')
   const port = Number(input.port)
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw appError('INVALID_PORT', '端口必须是1到65535之间的整数')
-  if (input.type !== 'ssh' && input.type !== 'database') throw appError('INVALID_CONNECTION_TYPE', 'Connection type is invalid')
+  if (input.type !== 'ssh' && input.type !== 'database' && input.type !== 'serial') throw appError('INVALID_CONNECTION_TYPE', 'Connection type is invalid')
+  const maximumPort = input.type === 'serial' ? 4_000_000 : 65535
+  if (!Number.isInteger(port) || port < 1 || port > maximumPort) throw appError('INVALID_PORT', input.type === 'serial' ? '波特率必须是1到4000000之间的整数' : '端口必须是1到65535之间的整数')
+  const type = input.type
   return {
     name: name.slice(0, 120),
-    type: input.type === 'database' ? 'database' : 'ssh',
+    type,
     host: host.slice(0, 255),
     port,
-    username: String(input.username || '').trim().slice(0, 120) || undefined,
-    authType: input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : undefined,
-    databaseType: ['mysql', 'postgres', 'sqlite'].includes(input.databaseType || '') ? input.databaseType : undefined,
-    database: String(input.database || '').trim().slice(0, 200) || undefined,
-    credentialId: String(input.credentialId || '').trim().slice(0, 160) || undefined,
+    username: type === 'serial' ? undefined : String(input.username || '').trim().slice(0, 120) || undefined,
+    authType: type === 'serial' ? undefined : input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : undefined,
+    databaseType: type === 'database' && ['mysql', 'postgres', 'sqlite'].includes(input.databaseType || '') ? input.databaseType : undefined,
+    database: type === 'database' ? String(input.database || '').trim().slice(0, 200) || undefined : undefined,
+    credentialId: type === 'serial' ? undefined : String(input.credentialId || '').trim().slice(0, 160) || undefined,
     groupId: String(input.groupId || '').trim().slice(0, 100) || undefined,
     favorite: Boolean(input.favorite),
     sortOrder: Number.isInteger(input.sortOrder) && Number(input.sortOrder) >= 0 ? Number(input.sortOrder) : 0
@@ -323,6 +326,48 @@ function toConnection(row: ConnectionRow): Connection {
 function ensureColumn(db: Database.Database, table: string, column: string, definition: string): void {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
   if (!columns.some((item) => item.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+}
+
+function migrateConnectionTypes(db: Database.Database): void {
+  const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'connections'").get() as { sql?: string } | undefined
+  if (table?.sql?.includes("'serial'")) return
+  db.pragma('foreign_keys = OFF')
+  try {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE connections_next (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial')),
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        username TEXT,
+        auth_type TEXT,
+        database_type TEXT,
+        database_name TEXT,
+        credential_id TEXT,
+        host_key_fingerprint TEXT,
+        group_id TEXT,
+        favorite INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        last_connected_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE SET NULL
+      );
+      INSERT INTO connections_next SELECT id, name, type, host, port, username, auth_type, database_type, database_name, credential_id, host_key_fingerprint, group_id, favorite, sort_order, last_connected_at, created_at, updated_at FROM connections;
+      DROP TABLE connections;
+      ALTER TABLE connections_next RENAME TO connections;
+      CREATE INDEX idx_connections_group ON connections(group_id);
+      CREATE INDEX idx_connections_updated ON connections(updated_at DESC);
+      COMMIT;
+    `)
+  } catch (error) {
+    try { db.exec('ROLLBACK') } catch { /* best effort */ }
+    throw error
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
 }
 
 export function appError(code: string, message: string, details?: unknown): Error & { code: string; details?: unknown } {

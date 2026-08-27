@@ -5,18 +5,23 @@ import type { ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestResult }
 import { CredentialService } from '../services/credentials'
 import { appError, StorageService } from '../services/storage'
 
-export function registerConnectionIpc(storage: StorageService, credentials: CredentialService): void {
+export function registerConnectionIpc(storage: StorageService, credentials: CredentialService, testSerial?: (path: string, baudRate: number) => Promise<ConnectionTestResult>): void {
   ipcMain.handle('connections:list', () => ({ connections: storage.listConnections(), groups: storage.listGroups() }))
   ipcMain.handle('connections:save', (_event, request: ConnectionSaveRequest) => {
     if (!request || typeof request !== 'object' || !request.connection || typeof request.connection !== 'object') throw appError('INVALID_CONNECTION', 'Connection input is invalid')
     if (request.credential !== undefined && typeof request.credential !== 'string') throw appError('INVALID_CREDENTIAL', 'Credential is invalid')
+    if (request.privateKeyPath !== undefined && typeof request.privateKeyPath !== 'string') throw appError('PRIVATE_KEY_FILE_INVALID', 'Private key file path is invalid')
     storage.validateConnection(request.connection)
     const previousCredentialId = request.connection.credentialId
-    const credentialId = request.credential
+    const credentialId = request.connection.type === 'serial'
+      ? undefined
+      : request.privateKeyPath
+        ? credentials.savePrivateKeyFile(request.connection.name, request.privateKeyPath, previousCredentialId)
+        : request.credential
       ? credentials.save(request.connection.name, request.credential, previousCredentialId)
       : request.clearCredential ? undefined : previousCredentialId
     const connection = storage.saveConnection({ ...request.connection, credentialId })
-    if (request.clearCredential && previousCredentialId && !storage.hasCredentialReference(previousCredentialId)) credentials.delete(previousCredentialId)
+    if ((request.clearCredential || request.connection.type === 'serial') && previousCredentialId && !storage.hasCredentialReference(previousCredentialId)) credentials.delete(previousCredentialId)
     return connection
   })
   ipcMain.handle('connections:delete', (_event, id: string) => {
@@ -30,7 +35,9 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
   ipcMain.handle('connections:test', async (_event, id: string) => {
     const connection = storage.getConnection(id)
     if (!connection) return { ok: false, code: 'CONNECTION_FAILED', message: 'Connection not found', latencyMs: 0, testedAt: Date.now() } satisfies ConnectionTestResult
-    const result = await testTcpConnection(connection.host, connection.port)
+    const result = connection.type === 'serial' && testSerial
+      ? await testSerial(connection.host, connection.port)
+      : await testTcpConnection(connection.host, connection.port)
     if (result.ok) storage.markConnected(id, result.testedAt)
     return result
   })

@@ -1,7 +1,8 @@
 import { app, safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
+import { isPrivateKeyText } from '../../shared/private-key'
 import { appError } from './storage'
 
 type CredentialFile = Record<string, { label: string; value: string }>
@@ -19,6 +20,21 @@ export class CredentialService {
     credentials[id] = { label: String(label).slice(0, 120), value: safeStorage.encryptString(secret).toString('base64') }
     this.write(credentials)
     return id
+  }
+
+  savePrivateKeyFile(label: string, filePath: string, id?: string): string {
+    if (typeof filePath !== 'string' || !isAbsolute(filePath) || !existsSync(filePath)) {
+      throw appError('PRIVATE_KEY_FILE_INVALID', 'Private key file does not exist')
+    }
+    const stat = statSync(filePath)
+    if (!stat.isFile() || stat.size < 1 || stat.size > 1024 * 1024) {
+      throw appError('PRIVATE_KEY_FILE_INVALID', 'Private key file must be a file smaller than 1 MB')
+    }
+    const key = readFileSync(filePath, 'utf8')
+    if (!isPrivateKeyText(key)) {
+      throw appError('PRIVATE_KEY_FORMAT_UNSUPPORTED', 'Supported private key formats are OpenSSH, PEM and PuTTY PPK')
+    }
+    return this.save(label, key, id)
   }
 
   get(id?: string): string | undefined {

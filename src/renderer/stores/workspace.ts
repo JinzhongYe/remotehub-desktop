@@ -17,7 +17,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeId.value) || tabs.value[0])
   let nextTabId = 0
 
-  function openConnection(connectionId: string, title: string, type: 'terminal' | 'sql'): void {
+  function openConnection(connectionId: string, title: string, type: 'terminal' | 'sftp' | 'sql'): void {
     const id = `connection:${connectionId}:${++nextTabId}`
     tabs.value.push({ id, type, title, connectionId, closable: true })
     activeId.value = id

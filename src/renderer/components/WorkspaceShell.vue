@@ -3,6 +3,8 @@ import type { Connection } from '../../shared/types'
 import { useConnectionStore } from '../stores/connection'
 import { useWorkspaceStore } from '../stores/workspace'
 import TerminalPane from './TerminalPane.vue'
+import SerialTerminalPane from './SerialTerminalPane.vue'
+import SftpPane from './SftpPane.vue'
 import { t } from '../i18n'
 
 defineProps<{ shortcutModifier: string }>()
@@ -19,7 +21,7 @@ function connectionFor(connectionId?: string): Connection | null {
 
 function openActiveAgain(): void {
   const tab = workspace.activeTab
-  if (tab?.connectionId && (tab.type === 'terminal' || tab.type === 'sql')) workspace.openConnection(tab.connectionId, tab.title, tab.type)
+  if (tab?.connectionId && (tab.type === 'terminal' || tab.type === 'sftp' || tab.type === 'sql')) workspace.openConnection(tab.connectionId, tab.title, tab.type)
 }
 </script>
 
@@ -45,6 +47,8 @@ function openActiveAgain(): void {
       </div>
       <template v-for="tab in workspace.tabs" :key="tab.id">
         <TerminalPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" v-show="workspace.activeId === tab.id" :connection-id="tab.connectionId!" :active="workspace.activeId === tab.id" />
+        <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" v-show="workspace.activeId === tab.id" :connection-id="tab.connectionId!" :active="workspace.activeId === tab.id" />
+        <SftpPane v-else-if="tab.type === 'sftp' && connectionFor(tab.connectionId)?.type === 'ssh'" v-show="workspace.activeId === tab.id" :connection-id="tab.connectionId!" />
         <div v-else-if="tab.connectionId" v-show="workspace.activeId === tab.id" class="workspace-placeholder">
           <div class="connection-overview">
             <div class="overview-icon">{{ connectionFor(tab.connectionId)?.type === 'database' ? 'DB' : '›_' }}</div>

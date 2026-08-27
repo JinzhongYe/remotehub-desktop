@@ -68,9 +68,9 @@ function openEdit(connection: Connection): void {
   dialogOpen.value = true
 }
 
-async function saveConnection(input: ConnectionInput, credential?: string, clearCredential?: boolean): Promise<void> {
+async function saveConnection(input: ConnectionInput, credential?: string, clearCredential?: boolean, privateKeyPath?: string): Promise<void> {
   try {
-    await connectionStore.save(input, credential, clearCredential)
+    await connectionStore.save(input, credential, clearCredential, privateKeyPath)
     dialogOpen.value = false
     setStatus('saved')
   } catch (error) {
@@ -91,7 +91,12 @@ async function removeConnection(connection: Connection): Promise<void> {
 function selectConnection(id: string): void {
   connectionStore.select(id)
   const selected = connectionStore.selected
-  if (selected) workspace.openConnection(selected.id, selected.name, selected.type === 'ssh' ? 'terminal' : 'sql')
+  if (selected) workspace.openConnection(selected.id, selected.name, selected.type === 'database' ? 'sql' : 'terminal')
+}
+
+function openSftp(connection: Connection): void {
+  connectionStore.select(connection.id)
+  workspace.openConnection(connection.id, `${connection.name} · SFTP`, 'sftp')
 }
 
 async function duplicateConnection(connection: Connection): Promise<void> {
@@ -154,10 +159,10 @@ async function removeGroup(group: Group): Promise<void> {
     <header class="top-toolbar">
       <div class="brand"><span class="brand-mark">RH</span><div><strong>RemoteHub</strong><small>DESKTOP WORKBENCH</small></div></div>
       <div class="toolbar-context"><span class="toolbar-label">{{ t('workspace') }}</span><span class="toolbar-separator">/</span><span>{{ connectionStore.selected?.name || t('noSelection') }}</span></div>
-      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button><span class="window-pill">Phase 3</span></div>
+      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button><span class="window-pill">Phase 4</span></div>
     </header>
     <div class="app-body">
-      <ConnectionExplorer :connections="connectionStore.filteredConnections" :recent-connections="connectionStore.recentConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
+      <ConnectionExplorer :connections="connectionStore.filteredConnections" :recent-connections="connectionStore.recentConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
       <main class="main-workspace"><WorkspaceShell :shortcut-modifier="shortcutModifier" /></main>
     </div>
     <footer class="status-bar"><span class="status-item"><span class="status-dot"></span>{{ statusText }}</span><span class="status-item">{{ appInfo?.platform || 'desktop' }} · {{ t('localOnly') }}</span><span class="status-item version">{{ appInfo?.version ? `v${appInfo.version}` : 'v0.1.0' }}</span></footer>

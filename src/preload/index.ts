@@ -1,11 +1,19 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ConnectionOrderItem, ConnectionSaveRequest } from '../shared/types'
 import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
+import type { SftpTransferEvent } from '../shared/sftp'
+import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
 
 const api = {
   app: {
     getInfo: () => ipcRenderer.invoke('app:getInfo'),
-    copyText: (text: string) => ipcRenderer.invoke('app:copyText', text)
+    copyText: (text: string) => ipcRenderer.invoke('app:copyText', text),
+    choosePrivateKey: () => ipcRenderer.invoke('app:choosePrivateKey'),
+    chooseUploadFiles: () => ipcRenderer.invoke('app:chooseUploadFiles'),
+    chooseDownloadPath: (defaultName: string) => ipcRenderer.invoke('app:chooseDownloadPath', defaultName)
+  },
+  files: {
+    getPath: (file: File) => webUtils.getPathForFile(file)
   },
   connections: {
     list: () => ipcRenderer.invoke('connections:list'),
@@ -30,6 +38,38 @@ const api = {
       const handler = (_event: Electron.IpcRendererEvent, payload: SshStatusEvent): void => listener(payload)
       ipcRenderer.on('ssh:status', handler)
       return () => ipcRenderer.removeListener('ssh:status', handler)
+    }
+  },
+  sftp: {
+    connect: (connectionId: string) => ipcRenderer.invoke('sftp:connect', connectionId),
+    trustHostKey: (connectionId: string, fingerprint: string) => ipcRenderer.invoke('sftp:trustHostKey', connectionId, fingerprint),
+    list: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:list', sessionId, path),
+    mkdir: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:mkdir', sessionId, path),
+    rename: (sessionId: string, oldPath: string, newPath: string) => ipcRenderer.invoke('sftp:rename', sessionId, oldPath, newPath),
+    remove: (sessionId: string, path: string, type: 'file' | 'directory' | 'link') => ipcRenderer.invoke('sftp:remove', sessionId, path, type),
+    upload: (sessionId: string, localPath: string, remoteDirectory: string) => ipcRenderer.invoke('sftp:upload', sessionId, localPath, remoteDirectory),
+    download: (sessionId: string, remotePath: string, localPath: string, size: number) => ipcRenderer.invoke('sftp:download', sessionId, remotePath, localPath, size),
+    disconnect: (sessionId: string) => ipcRenderer.invoke('sftp:disconnect', sessionId),
+    onTransfer: (listener: (event: SftpTransferEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SftpTransferEvent): void => listener(payload)
+      ipcRenderer.on('sftp:transfer', handler)
+      return () => ipcRenderer.removeListener('sftp:transfer', handler)
+    }
+  },
+  serial: {
+    listPorts: () => ipcRenderer.invoke('serial:listPorts'),
+    connect: (connectionId: string) => ipcRenderer.invoke('serial:connect', connectionId),
+    write: (sessionId: string, data: string) => ipcRenderer.invoke('serial:write', sessionId, data),
+    disconnect: (sessionId: string) => ipcRenderer.invoke('serial:disconnect', sessionId),
+    onData: (listener: (event: SerialDataEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SerialDataEvent): void => listener(payload)
+      ipcRenderer.on('serial:data', handler)
+      return () => ipcRenderer.removeListener('serial:data', handler)
+    },
+    onStatus: (listener: (event: SerialStatusEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SerialStatusEvent): void => listener(payload)
+      ipcRenderer.on('serial:status', handler)
+      return () => ipcRenderer.removeListener('serial:status', handler)
     }
   },
   groups: {

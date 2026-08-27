@@ -11,11 +11,16 @@ if errorlevel 1 goto :old_node
 where npm >nul 2>nul
 if errorlevel 1 goto :missing_npm
 
-if not exist "node_modules\.bin\electron.cmd" (
-  echo Installing dependencies for the first run...
-  call npm install --no-audit --no-fund
-  if errorlevel 1 goto :install_failed
-)
+if not exist "node_modules\.bin\electron.cmd" goto :install_dependencies
+if not exist "node_modules\serialport\package.json" goto :install_dependencies
+goto :dependencies_ready
+
+:install_dependencies
+echo Installing or updating dependencies...
+call npm install --no-audit --no-fund
+if errorlevel 1 goto :install_failed
+
+:dependencies_ready
 
 echo Starting RemoteHub Desktop...
 call npm run dev
@@ -42,6 +47,6 @@ pause
 exit /b 1
 
 :install_failed
-echo Dependency installation failed. Check your network connection and run start.bat again.
+echo Dependency installation failed. Check your network connection, C++ runtime, and run start.bat again.
 pause
 exit /b 1

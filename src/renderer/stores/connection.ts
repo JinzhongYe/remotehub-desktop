@@ -29,8 +29,8 @@ export const useConnectionStore = defineStore('connections', () => {
     }
   }
 
-  async function save(input: ConnectionInput, credential?: string, clearCredential = false): Promise<Connection> {
-    const item = await window.api.connections.save({ connection: input, credential, clearCredential })
+  async function save(input: ConnectionInput, credential?: string, clearCredential = false, privateKeyPath?: string): Promise<Connection> {
+    const item = await window.api.connections.save({ connection: input, credential, clearCredential, privateKeyPath })
     const index = connections.value.findIndex((connection) => connection.id === item.id)
     if (index >= 0) connections.value[index] = item
     else connections.value.unshift(item)
