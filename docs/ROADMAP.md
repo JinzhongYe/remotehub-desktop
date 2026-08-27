@@ -65,9 +65,12 @@
 
 - 打开本地 `.db` 文件、只读查询、表结构和导出。
 
-## Phase 9 — Workspace 完善
+## Phase 9 — Workspace 完善（已完成）
 
-- Tab 恢复、固定/批量关闭、Split View、快捷键、最近连接。
+- Workspace Tab、当前标签与 Split View 布局会在重启后恢复；已删除连接对应的历史标签会被安全丢弃。
+- 支持固定标签、关闭其他/右侧/全部未固定标签，以及双栏 Split View。
+- 支持 `Ctrl/⌘ + T/W/Shift+W/Tab/1–9/\` 标签与分屏快捷键。
+- 最近打开的五个连接即时显示在 Connection Explorer。
 
 ## Phase 10 — 发布
 

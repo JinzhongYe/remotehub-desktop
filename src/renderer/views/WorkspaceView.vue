@@ -27,6 +27,7 @@ const shortcutModifier = computed(() => appInfo.value?.platform === 'darwin' ? '
 onMounted(async () => {
   try {
     await connectionStore.load()
+    workspace.restore(connectionStore.connections.map((connection) => connection.id))
     appInfo.value = await window.api.app.getInfo()
     setStatus('ready')
   } catch (error) {
@@ -82,6 +83,7 @@ async function removeConnection(connection: Connection): Promise<void> {
   if (!window.confirm(t('deleteConnectionConfirm', { name: connection.name }))) return
   try {
     await connectionStore.remove(connection.id)
+    workspace.removeConnection(connection.id)
     setStatus('deleted')
   } catch (error) {
     setError(error, 'saveFailed')
@@ -90,12 +92,14 @@ async function removeConnection(connection: Connection): Promise<void> {
 
 function selectConnection(id: string): void {
   connectionStore.select(id)
+  connectionStore.markRecent(id)
   const selected = connectionStore.selected
   if (selected) workspace.openConnection(selected.id, selected.name, selected.type === 'database' ? 'sql' : 'terminal')
 }
 
 function openSftp(connection: Connection): void {
   connectionStore.select(connection.id)
+  connectionStore.markRecent(connection.id)
   workspace.openConnection(connection.id, `${connection.name} · SFTP`, 'sftp')
 }
 
@@ -159,7 +163,7 @@ async function removeGroup(group: Group): Promise<void> {
     <header class="top-toolbar">
       <div class="brand"><span class="brand-mark">RH</span><div><strong>RemoteHub</strong><small>DESKTOP WORKBENCH</small></div></div>
       <div class="toolbar-context"><span class="toolbar-label">{{ t('workspace') }}</span><span class="toolbar-separator">/</span><span>{{ connectionStore.selected?.name || t('noSelection') }}</span></div>
-      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button><span class="window-pill">Phase 8</span></div>
+      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button><span class="window-pill">Phase 9</span></div>
     </header>
     <div class="app-body">
       <ConnectionExplorer :connections="connectionStore.filteredConnections" :recent-connections="connectionStore.recentConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
