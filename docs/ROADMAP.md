@@ -11,7 +11,7 @@
 
 验收：应用能启动；重启后连接资产仍存在；Renderer 不能直接触达 Node API；构建产物可加载。
 
-## Phase 1 — Connection Manager（当前）
+## Phase 1 — Connection Manager（已完成）
 
 - 完整连接 CRUD、分组、复制、收藏和拖动排序。
 - 系统钥匙串凭据引用。
@@ -19,11 +19,12 @@
 - 中英文界面切换（本地记忆语言偏好）。
 - Windows / macOS 快捷键和系统凭据加密兼容。
 
-## Phase 2 — SSH
+## Phase 2 — SSH（基础能力已完成）
 
-- `ssh2` SSHService 和 IPC。
-- xterm.js 多 Terminal Tab、输入输出、resize、复制粘贴、UTF-8。
-- 密码、Private Key、Key Passphrase。
+- `ssh2` SSHService 和白名单 IPC。
+- xterm.js Terminal、输入输出、resize、UTF-8、断开和重连。
+- 密码和 Private Key 凭据从系统加密存储读取。
+- 当前限制：Private Key 口令、Host Key 指纹确认和多终端 Tab 仍属于后续稳定性迭代。
 
 ## Phase 3 — SSH 稳定性
 

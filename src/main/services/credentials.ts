@@ -21,6 +21,21 @@ export class CredentialService {
     return id
   }
 
+  get(id?: string): string | undefined {
+    if (!id) return undefined
+    if (!/^[\w-]{1,160}$/.test(id)) throw appError('INVALID_CREDENTIAL_ID', 'Credential identifier is invalid')
+    const entry = this.read()[id]
+    if (!entry) return undefined
+    if (!safeStorage.isEncryptionAvailable() || (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) {
+      throw appError('CREDENTIAL_STORE_UNAVAILABLE', 'System credential storage is unavailable')
+    }
+    try {
+      return safeStorage.decryptString(Buffer.from(entry.value, 'base64'))
+    } catch {
+      throw appError('CREDENTIAL_DECRYPT_FAILED', 'Saved credential cannot be decrypted')
+    }
+  }
+
   delete(id?: string): void {
     if (!id) return
     if (!/^[\w-]{1,160}$/.test(id)) throw appError('INVALID_CREDENTIAL_ID', 'Credential identifier is invalid')

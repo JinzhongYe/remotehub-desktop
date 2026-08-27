@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP 和数据库能力。当前 Phase 1 交付连接管理、系统凭据引用和 TCP 可达性测试，不在渲染进程实现远程连接。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP 和数据库能力。当前 Phase 2 交付连接管理、系统凭据引用、TCP 可达性测试和基础 SSH Terminal；所有远程连接仍在 Main 进程实现。
 
 ## Electron 分层
 
@@ -38,12 +38,12 @@ connections:reorder
 connections:test
 groups:save
 groups:delete
+ssh:connect / ssh:write / ssh:resize / ssh:disconnect
 ```
 
 后续扩展：
 
 ```text
-ssh:connect / ssh:write / ssh:resize / ssh:disconnect
 sftp:list / sftp:transfer / sftp:mkdir / sftp:rename / sftp:delete
 database:connect / database:query / database:getTables
 ```
@@ -84,6 +84,8 @@ interface Connection {
   credentialId?: string
   groupId?: string
   favorite?: boolean
+  sortOrder: number
+  lastConnectedAt?: number
   createdAt: number
   updatedAt: number
 }
@@ -94,14 +96,18 @@ interface Connection {
 - BrowserWindow 开启 `contextIsolation`，关闭 `nodeIntegration`。
 - preload 只暴露白名单 API，不暴露通用 `ipcRenderer`。
 - 密码、Token、私钥口令只进入系统凭据存储，日志中禁止出现。
-- Host Key 首次连接显示指纹，变更时阻断静默连接。
+- Host Key 指纹确认将在 Phase 3 接入；当前 SSH 基础连接尚未持久化指纹。
 - 默认本地优先，远程数据不自动上传云端。
 - 连接名、主机、端口、SQL 和文件路径在 Main 进程再次校验。
 
 ## Phase 0 运行路径
 
-Renderer 通过 `connections:list/save/delete` 验证 IPC；Main 进程打开用户数据目录中的 `remotehub.db`，初始化 `connections` 与 `groups` 表。若原生 SQLite 模块刚安装尚未就绪，StorageService 会回退到同目录的元数据 JSON 文件，且仍不保存任何凭据。远程连接服务在 Phase 2 以后接入，Phase 0 不创建 SSH、SFTP 或数据库网络 Session。
+Renderer 通过 `connections:list/save/delete` 验证 IPC；Main 进程打开用户数据目录中的 `remotehub.db`，初始化 `connections` 与 `groups` 表。若原生 SQLite 模块刚安装尚未就绪，StorageService 会回退到同目录的元数据 JSON 文件，且仍不保存任何凭据。远程连接服务在 Phase 2 接入，Phase 0 不创建 SSH、SFTP 或数据库网络 Session。
 
 ## Phase 1 运行路径
 
 Renderer 通过白名单 IPC 管理连接与分组。连接顺序、最近成功测试时间和随机 `credentialId` 写入 SQLite；敏感值由 Main 进程加密后写入权限受限的凭据文件。`connections:test` 只执行五秒超时的 TCP 可达性检查，并返回稳定错误码，不建立 SSH 或数据库会话。
+
+## Phase 2 运行路径
+
+SSH Terminal 打开时，Renderer 只提交 `connectionId`。Main 进程从 StorageService 读取 SSH 元数据，从 CredentialService 读取系统加密凭据，再由 `SshService` 创建 `ssh2` Client 和 shell stream。终端输入、输出和状态通过 `ssh:*` 白名单 IPC 传输；关闭工作区或应用退出时释放 stream 和 client。当前实现支持密码 / Private Key、UTF-8、resize、断开和重连，Host Key 指纹及 Private Key 口令将在后续稳定性阶段补齐。

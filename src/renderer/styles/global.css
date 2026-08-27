@@ -85,6 +85,18 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .tab-close:hover { color: var(--text); }
 .new-tab { width: 35px; border: 0; color: var(--muted); background: transparent; font-size: 17px; }
 .workspace-content { min-height: 0; flex: 1; overflow: auto; }
+.terminal-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #0a0f15; }
+.terminal-toolbar { display: flex; align-items: center; gap: 9px; min-height: 36px; padding: 0 12px; border-bottom: 1px solid var(--line-soft); color: var(--muted); background: #111821; }
+.terminal-kind { padding: 3px 5px; border: 1px solid rgba(121,217,173,.35); border-radius: 3px; color: var(--green); background: rgba(121,217,173,.08); font-size: 9px; font-weight: 700; }
+.terminal-title { color: var(--text); font-size: 11px; }
+.terminal-status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 10px; }
+.terminal-status.connecting .status-dot { background: var(--yellow); box-shadow: 0 0 8px rgba(244,201,120,.55); }
+.terminal-status.error .status-dot, .terminal-status.closed .status-dot { background: var(--red); box-shadow: 0 0 8px rgba(255,142,152,.55); }
+.terminal-message { max-width: min(42vw, 420px); overflow: hidden; color: var(--red); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-toolbar .toolbar-button { padding: 4px 8px; font-size: 10px; }
+.terminal-host { min-height: 0; flex: 1; padding: 12px 14px; }
+.terminal-host .xterm { height: 100%; }
+.terminal-host .xterm-viewport { overflow-y: auto !important; }
 .welcome-view { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); text-align: center; }
 .welcome-glyph { display: grid; width: 55px; height: 55px; place-items: center; margin-bottom: 18px; border: 1px solid rgba(128,183,255,.5); border-radius: 12px; color: var(--blue); background: rgba(128,183,255,.08); font-weight: 800; letter-spacing: -1px; }
 .welcome-view h1 { margin: 0; color: #e8eff7; font-size: 22px; font-weight: 600; }
@@ -111,8 +123,9 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; }
 .field.wide { grid-column: span 2; }
-.field input, .field select { width: 100%; padding: 8px; border: 1px solid #344252; border-radius: 4px; outline: 0; color: var(--text); background: #0f151c; font-size: 11px; }
-.field input:focus, .field select:focus { border-color: var(--blue); }
+.field input, .field select, .field textarea { width: 100%; padding: 8px; border: 1px solid #344252; border-radius: 4px; outline: 0; color: var(--text); background: #0f151c; font-size: 11px; }
+.field textarea { min-height: 78px; resize: vertical; font-family: "Cascadia Mono", Consolas, monospace; line-height: 1.35; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); }
 .favorite-check { display: flex; align-items: center; gap: 7px; margin-top: 15px; color: var(--muted); font-size: 10px; }
 .favorite-check input { accent-color: var(--blue); }
 .dialog-note { margin: 16px 0; color: var(--subtle); font-size: 10px; line-height: 1.5; }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Connection } from '../../shared/types'
 import { useWorkspaceStore } from '../stores/workspace'
+import TerminalPane from './TerminalPane.vue'
 import { t } from '../i18n'
 
 defineProps<{ selected: Connection | null; shortcutModifier: string }>()
@@ -34,16 +35,19 @@ function iconFor(type: string): string {
         </div>
       </template>
       <template v-else>
-        <div class="connection-overview">
-          <div class="overview-icon">{{ selected?.type === 'database' ? 'DB' : '›_' }}</div>
-          <span class="status-dot"></span>
-          <div><span class="eyebrow">{{ t('workspaceReady') }}</span><h2>{{ selected?.name }}</h2><p>{{ selected?.host }}:{{ selected?.port }} · {{ selected?.type === 'database' ? selected.databaseType : 'SSH' }}</p></div>
-        </div>
-        <div class="module-placeholders">
-          <button class="module-tile" disabled><span>›_</span><strong>Terminal</strong><small>{{ t('terminalPhase') }}</small></button>
-          <button class="module-tile" disabled><span>⇄</span><strong>SFTP</strong><small>{{ t('sftpPhase') }}</small></button>
-          <button class="module-tile" disabled><span>SQL</span><strong>Database</strong><small>{{ t('databasePhase') }}</small></button>
-        </div>
+        <TerminalPane v-if="selected?.type === 'ssh' && workspace.activeTab?.type === 'terminal' && workspace.activeTab.connectionId === selected.id" :key="selected.id" :connection-id="selected.id" />
+        <template v-else>
+          <div class="connection-overview">
+            <div class="overview-icon">{{ selected?.type === 'database' ? 'DB' : '›_' }}</div>
+            <span class="status-dot"></span>
+            <div><span class="eyebrow">{{ t('workspaceReady') }}</span><h2>{{ selected?.name }}</h2><p>{{ selected?.host }}:{{ selected?.port }} · {{ selected?.type === 'database' ? selected.databaseType : 'SSH' }}</p></div>
+          </div>
+          <div class="module-placeholders">
+            <button class="module-tile" disabled><span>›_</span><strong>Terminal</strong><small>{{ t('terminalPhase') }}</small></button>
+            <button class="module-tile" disabled><span>⇄</span><strong>SFTP</strong><small>{{ t('sftpPhase') }}</small></button>
+            <button class="module-tile" disabled><span>SQL</span><strong>Database</strong><small>{{ t('databasePhase') }}</small></button>
+          </div>
+        </template>
       </template>
     </div>
   </section>

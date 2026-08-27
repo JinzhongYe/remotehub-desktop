@@ -2,11 +2,14 @@ import { app, BrowserWindow, session } from 'electron'
 import { join } from 'node:path'
 import { registerAppIpc } from './ipc/app.ipc'
 import { registerConnectionIpc } from './ipc/connection.ipc'
+import { registerSshIpc } from './ipc/ssh.ipc'
 import { StorageService } from './services/storage'
 import { CredentialService } from './services/credentials'
+import { SshService } from './services/ssh'
 
 let mainWindow: BrowserWindow | null = null
 let storage: StorageService | null = null
+let ssh: SshService | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -37,8 +40,11 @@ function createWindow(): void {
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   storage = new StorageService()
+  const credentials = new CredentialService()
+  ssh = new SshService(credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   registerAppIpc()
-  registerConnectionIpc(storage, new CredentialService())
+  registerConnectionIpc(storage, credentials)
+  registerSshIpc(storage, ssh)
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
@@ -49,3 +55,4 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => storage?.close())
+app.on('before-quit', () => ssh?.dispose())
