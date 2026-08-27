@@ -3,13 +3,14 @@ import type { ConnectionOrderItem, ConnectionSaveRequest } from '../shared/types
 import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
 import type { SftpTransferEvent } from '../shared/sftp'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
-import type { DatabaseQueryRequest } from '../shared/database'
+import type { DatabaseCsvExport, DatabaseQueryRequest } from '../shared/database'
 
 const api = {
   app: {
     getInfo: () => ipcRenderer.invoke('app:getInfo'),
     copyText: (text: string) => ipcRenderer.invoke('app:copyText', text),
     choosePrivateKey: () => ipcRenderer.invoke('app:choosePrivateKey'),
+    chooseDatabaseFile: () => ipcRenderer.invoke('app:chooseDatabaseFile'),
     chooseUploadFiles: () => ipcRenderer.invoke('app:chooseUploadFiles'),
     chooseUploadFolder: () => ipcRenderer.invoke('app:chooseUploadFolder'),
     chooseDownloadPath: (defaultName: string) => ipcRenderer.invoke('app:chooseDownloadPath', defaultName),
@@ -88,6 +89,7 @@ const api = {
     listTables: (sessionId: string, name: string) => ipcRenderer.invoke('database:listTables', sessionId, name),
     listColumns: (sessionId: string, name: string, table: string) => ipcRenderer.invoke('database:listColumns', sessionId, name, table),
     query: (sessionId: string, request: DatabaseQueryRequest) => ipcRenderer.invoke('database:query', sessionId, request),
+    exportCsv: (request: DatabaseCsvExport) => ipcRenderer.invoke('database:exportCsv', request),
     disconnect: (sessionId: string) => ipcRenderer.invoke('database:disconnect', sessionId)
   },
   groups: {

@@ -6,6 +6,7 @@ import { appError, StorageService } from '../storage'
 import type { DatabaseAdapter, DatabaseAdapterFactory } from './adapter'
 import { mapMysqlError, mysqlAdapterFactory } from './mysql'
 import { mapPostgresError, postgresAdapterFactory } from './postgres'
+import { mapSqliteError, sqliteAdapterFactory } from './sqlite'
 
 type DatabaseSession = { id: string; connectionId: string; adapter: DatabaseAdapter; busy: boolean }
 
@@ -16,7 +17,8 @@ export class DatabaseService {
     private readonly storage: StorageService,
     private readonly credentials: CredentialService,
     private readonly mysqlFactory: DatabaseAdapterFactory = mysqlAdapterFactory,
-    private readonly postgresFactory: DatabaseAdapterFactory = postgresAdapterFactory
+    private readonly postgresFactory: DatabaseAdapterFactory = postgresAdapterFactory,
+    private readonly sqliteFactory: DatabaseAdapterFactory = sqliteAdapterFactory
   ) {}
 
   async connect(connection: Connection): Promise<DatabaseConnectResult> {
@@ -35,9 +37,9 @@ export class DatabaseService {
       if (connection.type !== 'database') throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Database adapter is not available')
       adapter = await this.connectAdapter(connection)
       await adapter.ping()
-      return { ok: true, code: 'OK', message: `${adapter.type === 'postgres' ? 'PostgreSQL' : 'MySQL'} authentication succeeded`, latencyMs: Date.now() - startedAt, testedAt: Date.now() }
+      return { ok: true, code: 'OK', message: `${adapter.type === 'postgres' ? 'PostgreSQL authentication' : adapter.type === 'mysql' ? 'MySQL authentication' : 'SQLite file'} succeeded`, latencyMs: Date.now() - startedAt, testedAt: Date.now() }
     } catch (error) {
-      const failure = connection.databaseType === 'postgres' ? mapPostgresError(error) : mapMysqlError(error)
+      const failure = connection.databaseType === 'postgres' ? mapPostgresError(error) : connection.databaseType === 'sqlite' ? mapSqliteError(error) : mapMysqlError(error)
       const code: ConnectionTestResult['code'] = failure.code === 'DATABASE_AUTH_FAILED' ? 'AUTHENTICATION_FAILED'
         : failure.code === 'DATABASE_NOT_FOUND' ? 'DATABASE_NOT_FOUND'
           : failure.code === 'DATABASE_TIMEOUT' ? 'CONNECTION_TIMEOUT'
@@ -92,7 +94,7 @@ export class DatabaseService {
   }
 
   private async connectAdapter(connection: Connection): Promise<DatabaseAdapter> {
-    const factory = connection.databaseType === 'mysql' ? this.mysqlFactory : connection.databaseType === 'postgres' ? this.postgresFactory : undefined
+    const factory = connection.databaseType === 'mysql' ? this.mysqlFactory : connection.databaseType === 'postgres' ? this.postgresFactory : connection.databaseType === 'sqlite' ? this.sqliteFactory : undefined
     if (!factory) throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Database adapter is not available in this phase')
     if (!connection.sshTunnelId) return factory.connect(connection, this.credentials.get(connection.credentialId))
     const tunnelConnection = this.storage.getConnection(connection.sshTunnelId)

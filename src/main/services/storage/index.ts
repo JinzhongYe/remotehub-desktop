@@ -304,7 +304,7 @@ function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'c
     database: type === 'database' ? String(input.database || '').trim().slice(0, 200) || undefined : undefined,
     databaseSslMode: type === 'database' && input.databaseType === 'postgres' && ['disable', 'require', 'verify-full'].includes(input.databaseSslMode || '') ? input.databaseSslMode : undefined,
     sshTunnelId: type === 'database' && input.databaseType === 'postgres' ? String(input.sshTunnelId || '').trim().slice(0, 100) || undefined : undefined,
-    credentialId: type === 'serial' ? undefined : String(input.credentialId || '').trim().slice(0, 160) || undefined,
+    credentialId: type === 'serial' || (type === 'database' && input.databaseType === 'sqlite') ? undefined : String(input.credentialId || '').trim().slice(0, 160) || undefined,
     groupId: String(input.groupId || '').trim().slice(0, 100) || undefined,
     favorite: Boolean(input.favorite),
     sortOrder: Number.isInteger(input.sortOrder) && Number(input.sortOrder) >= 0 ? Number(input.sortOrder) : 0

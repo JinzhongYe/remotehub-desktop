@@ -1,4 +1,4 @@
-export type DatabaseAdapterType = 'mysql' | 'postgres'
+export type DatabaseAdapterType = 'mysql' | 'postgres' | 'sqlite'
 export type DatabaseObjectType = 'table' | 'view'
 export type DatabaseCell = string | number | boolean | null
 
@@ -61,6 +61,12 @@ export interface DatabaseQueryResult {
   statement: string
 }
 
+export interface DatabaseCsvExport {
+  fileName: string
+  columns: string[]
+  rows: DatabaseCell[][]
+}
+
 export const DATABASE_PAGE_SIZE = 200
 export const DATABASE_MAX_PAGE_SIZE = 500
 export const DATABASE_MAX_SQL_LENGTH = 1024 * 1024
@@ -86,6 +92,20 @@ export function databaseStatement(sql: string): string {
 export function isPageableStatement(sql: string): boolean {
   const statement = databaseStatement(sql)
   return statement === 'SELECT' || statement === 'WITH'
+}
+
+export function databaseResultToCsv(input: DatabaseCsvExport): string {
+  if (!input || !Array.isArray(input.columns) || !Array.isArray(input.rows) || input.columns.length > 1000 || input.rows.length > DATABASE_MAX_PAGE_SIZE) {
+    throw databaseInputError('DATABASE_EXPORT_INVALID', 'Export data is invalid')
+  }
+  const width = input.columns.length
+  if (!width || input.rows.some((row) => !Array.isArray(row) || row.length !== width)) throw databaseInputError('DATABASE_EXPORT_INVALID', 'Export rows do not match the columns')
+  return [input.columns, ...input.rows].map((row) => row.map(csvCell).join(',')).join('\r\n')
+}
+
+function csvCell(value: DatabaseCell): string {
+  const text = value == null ? '' : String(value)
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
 function databaseInputError(code: string, message: string): Error & { code: string } {

@@ -243,6 +243,8 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .result-section { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .result-toolbar { flex: 0 0 34px; }
 .result-pager { display: flex; align-items: center; gap: 7px; margin-left: auto; color: var(--muted); font-size: 9px; font-weight: 400; }
+.result-export { margin-left: auto; padding: 3px 7px; }
+.result-export + .result-pager { margin-left: 0; }
 .result-pager button { padding: 3px 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--blue); background: #18222d; font-size: 9px; }
 .result-pager button:disabled { color: var(--subtle); opacity: .55; }
 .result-grid-wrap { min-height: 0; flex: 1; overflow: auto; }

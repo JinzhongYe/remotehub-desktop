@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { basicSetup, EditorView } from 'codemirror'
-import { MySQL, PostgreSQL, sql } from '@codemirror/lang-sql'
+import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryResult, DatabaseTable } from '../../shared/database'
@@ -11,6 +11,7 @@ import { useConnectionStore } from '../stores/connection'
 const props = defineProps<{ connectionId: string }>()
 const connections = useConnectionStore()
 const isPostgres = computed(() => connections.connections.find((item) => item.id === props.connectionId)?.databaseType === 'postgres')
+const isSqlite = computed(() => connections.connections.find((item) => item.id === props.connectionId)?.databaseType === 'sqlite')
 
 const editorHost = ref<HTMLElement | null>(null)
 const sessionId = ref('')
@@ -145,8 +146,19 @@ function showError(error: unknown): void {
   errorMessage.value = error instanceof Error ? error.message : t('databaseUnavailable')
 }
 
+async function exportResult(): Promise<void> {
+  if (!result.value || result.value.kind !== 'rows') return
+  try {
+    await window.api.database.exportCsv({
+      fileName: `remotehub-results-page-${result.value.page + 1}.csv`,
+      columns: result.value.columns.map((column) => column.name),
+      rows: result.value.rows
+    })
+  } catch (error) { showError(error) }
+}
+
 function quoteIdentifier(value: string): string {
-  return isPostgres.value ? `"${value.replaceAll('"', '""')}"` : `\`${value.replaceAll('`', '``')}\``
+  return isPostgres.value || isSqlite.value ? `"${value.replaceAll('"', '""')}"` : `\`${value.replaceAll('`', '``')}\``
 }
 
 function displayCell(value: string | number | boolean | null): string {
@@ -157,8 +169,8 @@ onMounted(async () => {
   await nextTick()
   if (editorHost.value) editor = new EditorView({
     parent: editorHost.value,
-    doc: 'SELECT VERSION() AS version;',
-    extensions: [basicSetup, sql({ dialect: isPostgres.value ? PostgreSQL : MySQL }), oneDark, EditorView.lineWrapping]
+    doc: isSqlite.value ? 'SELECT sqlite_version() AS version;' : 'SELECT VERSION() AS version;',
+    extensions: [basicSetup, sql({ dialect: isPostgres.value ? PostgreSQL : isSqlite.value ? SQLite : MySQL }), oneDark, EditorView.lineWrapping]
   })
   await connect()
 })
@@ -173,8 +185,8 @@ onBeforeUnmount(() => {
 <template>
   <section class="database-pane">
     <header class="database-toolbar">
-      <span class="database-kind">{{ isPostgres ? 'PG' : 'MY' }}</span>
-      <strong>{{ t(isPostgres ? 'postgresWorkspace' : 'mysqlWorkspace') }}</strong>
+      <span class="database-kind">{{ isPostgres ? 'PG' : isSqlite ? 'SQ' : 'MY' }}</span>
+      <strong>{{ t(isPostgres ? 'postgresWorkspace' : isSqlite ? 'sqliteWorkspace' : 'mysqlWorkspace') }}</strong>
       <select v-model="selectedDatabase" :disabled="!sessionId || connecting" @change="changeDatabase">
         <option v-if="!databases.length" value="">{{ t('noDatabase') }}</option>
         <option v-for="database in databases" :key="database.name" :value="database.name">{{ database.name }}{{ database.system ? ` · ${t('systemDatabase')}` : '' }}</option>
@@ -209,7 +221,7 @@ onBeforeUnmount(() => {
         </section>
         <section class="result-section">
           <div class="result-toolbar">
-            <span>{{ t('resultGrid') }}</span><small>{{ resultSummary }}</small>
+            <span>{{ t('resultGrid') }}</span><small>{{ resultSummary }}</small><button v-if="result?.kind === 'rows'" class="toolbar-button result-export" @click="exportResult">⇩ {{ t('exportPage') }}</button>
             <div v-if="result?.kind === 'rows'" class="result-pager"><button :disabled="running || result.page === 0" @click="runQuery(result.page - 1)">‹ {{ t('previousPage') }}</button><span>{{ t('pageNumber', { page: result.page + 1 }) }}</span><button :disabled="running || !result.hasMore" @click="runQuery(result.page + 1)">{{ t('nextPage') }} ›</button></div>
           </div>
           <div class="result-grid-wrap">

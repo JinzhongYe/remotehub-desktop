@@ -1,6 +1,6 @@
 # RemoteHub Desktop
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本完成 Phase 7：可以管理连接，通过 SSH 打开多个终端和带传输队列的 SFTP 文件工作区，连接本机串口设备，并直接连接 MySQL 与 PostgreSQL；SQLite 工作区会在后续阶段接入。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本完成 Phase 8：可以管理连接，通过 SSH 打开多个终端和带传输队列的 SFTP 文件工作区，连接本机串口设备，并直接使用 MySQL、PostgreSQL 与本地 SQLite 数据库。
 
 ## 当前交付
 
@@ -18,9 +18,10 @@ RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当�
 - MySQL 密码登录、数据库/表/字段浏览、CodeMirror SQL 编辑器和分页结果表格
 - MySQL 查询单页最多 200 行、最大可调至 500 行，支持选中 SQL 执行和 30 秒查询超时
 - PostgreSQL Schema 浏览、服务端游标分页、SSL 和复用 SSH 连接资产的安全隧道
+- 本地 SQLite 文件选择、只读查询、表结构浏览和当前结果页 CSV 导出
 - 紧凑的深色开发工具界面
 
-SSH 和尚未接入的数据库类型使用 TCP 可达性测试；MySQL 测试会真实验证用户名、密码和默认数据库，串口测试会短暂打开并关闭所选设备。SSH/SFTP、MySQL 和串口都只在 Main 进程建立会话，Renderer 只能通过白名单 IPC 操作。敏感凭据经 Electron `safeStorage` 使用操作系统加密能力保存，SQLite 只保存随机引用标识；选择私钥文件后，应用读取并加密保存内容，不依赖原文件长期存在。
+SSH 使用 TCP 可达性测试；MySQL/PostgreSQL 测试会真实验证认证，SQLite 测试会以只读方式打开本地文件，串口测试会短暂打开并关闭所选设备。SSH/SFTP、数据库和串口都只在 Main 进程建立会话，Renderer 只能通过白名单 IPC 操作。敏感凭据经 Electron `safeStorage` 使用操作系统加密能力保存；选择私钥文件后，应用读取并加密保存内容，不依赖原文件长期存在。
 
 ## 启动
 
@@ -31,7 +32,7 @@ npm install
 npm run dev
 ```
 
-需要 Node.js 20 或更高版本（Intel 与 Apple Silicon macOS 均可）。
+需要 Node.js 20 或更高版本（Intel 与 Apple Silicon macOS 均可）。`npm install` 会自动为当前 Electron 版本重建 `better-sqlite3` 原生模块。
 
 `npm run dev` 会先构建应用，再启动本地预览服务和桌面窗口。关闭窗口即可结束本地开发进程。项目不要求预装 pnpm。
 
@@ -44,6 +45,8 @@ SSH 连接保存后，单击连接打开终端；连接行上的 `⇄` 按钮打
 MySQL 连接选择 `Database` 和 `MySQL · Phase 6`，填写主机、端口、用户名、密码及可选默认数据库。打开连接后可以切换数据库、展开表查看字段，双击表生成预览 SQL；`Ctrl/⌘ + Enter` 执行选中内容，没有选中时执行全文。分页仅用于 `SELECT`/`WITH` 查询，其他语句直接执行并显示影响行数。
 
 PostgreSQL 连接选择 `PostgreSQL · Phase 7`，可配置 SSL 模式和一个已有 SSH 连接作为隧道。隧道连接必须先单独打开一次并信任 Host Key；数据库工作区沿用同一套 SQL UI，以 Schema 作为左侧结构浏览层级，并通过服务端游标分页。
+
+SQLite 连接选择 `SQLite · Phase 8` 并选取本地 `.db`、`.sqlite` 或 `.sqlite3` 文件。文件始终以 `readonly + query_only` 模式打开，只允许返回结果的查询；Result Grid 的“导出当前页”会通过系统保存对话框写入 UTF-8 CSV。
 
 ## 校验与构建
 

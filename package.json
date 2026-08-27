@@ -9,6 +9,7 @@
   "main": "dist-electron/main/index.js",
   "type": "commonjs",
   "scripts": {
+    "postinstall": "node scripts/rebuild-native.mjs",
     "dev": "npm run build && concurrently -k \"vite preview --configLoader native --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "vite build --configLoader native && tsc -p tsconfig.node.json",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",

@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 7 交付连接管理、系统凭据引用、Host Key 固定、独立 SSH/SFTP/串口工作区、受控 SFTP 传输队列以及 MySQL/PostgreSQL 工作区；所有设备与远程连接仍在 Main 进程实现。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 8 交付连接管理、系统凭据引用、Host Key 固定、独立 SSH/SFTP/串口工作区、受控 SFTP 传输队列以及 MySQL/PostgreSQL/SQLite 工作区；所有设备、文件与远程连接仍在 Main 进程实现。
 
 ## Electron 分层
 
@@ -29,7 +29,7 @@ Renderer 禁止直接访问 `fs`、`ssh2`、数据库驱动、私钥和密码。
 IPC 通道按领域命名：
 
 ```text
-app:getInfo / app:copyText
+app:getInfo / app:copyText / app:chooseDatabaseFile
 connections:list
 connections:save
 connections:delete
@@ -44,13 +44,7 @@ sftp:enqueueUploads / sftp:enqueueDownload / sftp:listTransfers
 sftp:pauseTransfer / sftp:resumeTransfer / sftp:cancelTransfer / sftp:retryTransfer / sftp:clearFinishedTransfers
 serial:listPorts / serial:connect / serial:write / serial:disconnect
 database:connect / database:disconnect / database:listDatabases / database:useDatabase
-database:listTables / database:listColumns / database:query
-```
-
-后续扩展：
-
-```text
-database adapters: PostgreSQL / SQLite
+database:listTables / database:listColumns / database:query / database:exportCsv
 ```
 
 每个 handler 只负责输入校验、调用服务和错误映射；业务逻辑不写入 Vue 组件。
@@ -71,9 +65,10 @@ sessionId、connectionId、状态、错误码、展示元数据
 - `SFTPService`：独立 SSH/SFTP 会话、目录操作、递归传输计划、覆盖检查和文件流适配。
 - `TransferManager`：内存队列、双并发调度、任务状态、进度限流、暂停/继续、取消和重试。
 - `SerialService`：跨平台设备枚举、串口会话、输入输出和连接测试。
-- `DatabaseService`：独立数据库 Session、并发保护和统一 Adapter 接口；Phase 6–7 接入 MySQLAdapter 与 PostgresAdapter。
+- `DatabaseService`：独立数据库 Session、并发保护和统一 Adapter 接口；Phase 6–8 接入 MySQLAdapter、PostgresAdapter 与 SqliteAdapter。
 - `MySQLAdapter`：密码认证、结构元数据、数据库切换、查询分页、结果序列化和稳定错误映射。
 - `PostgresAdapter`：Schema 元数据、服务端游标分页、SSL 和经可信 SSH 资产建立的隧道。
+- `SqliteAdapter`：本地文件只读打开、表结构、分页查询和稳定错误映射。
 - `StorageService`：本地 SQLite 只保存连接元数据和 `credentialId`，不保存密码。
 - `CredentialService`：通过 Electron `safeStorage` 对接 macOS Keychain、Windows DPAPI 和 Linux Secret Service；Linux 明文后端不可用。
 
@@ -110,6 +105,7 @@ interface Connection {
 - 首次 SSH 连接必须确认 SHA-256 Host Key 指纹；后续指纹变化会阻断连接，修改主机或端口时清除旧指纹。
 - 默认本地优先，远程数据不自动上传云端。
 - 连接名、主机、端口、SQL 和文件路径在 Main 进程再次校验。
+- SQLite 文件使用 `readonly + query_only` 双重保护；CSV 只能写入用户通过系统对话框选定的位置。
 
 ## Phase 0 运行路径
 
@@ -142,3 +138,7 @@ MySQL SQL Tab 创建独立 Database Session。Main 进程从 StorageService 读�
 ## Phase 7 运行路径
 
 PostgreSQL SQL Tab 复用数据库 UI，把 Schema 映射为结构 Explorer 的顶层目录。`SELECT`/`WITH` 在只读事务中通过 `DECLARE SCROLL CURSOR`、`MOVE` 和 `FETCH` 分页，切换 SQL 或执行写操作时关闭游标。连接可启用 SSL 加密或严格证书校验；SSH Tunnel 复用已有 SSH 资产、系统凭据和已固定的 Host Key，通过 `forwardOut` 将 PostgreSQL 流量直接送入数据库驱动，不开放本地监听端口。
+
+## Phase 8 运行路径
+
+SQLite 连接资产以 `host` 保存用户选择的绝对本地文件路径，不保存凭据。Main 进程通过为 Electron ABI 重建的 `better-sqlite3` 以只读模式打开文件，Explorer 读取 `sqlite_schema` 与 `PRAGMA table_info`，查询层只执行 `reader` 语句并复用受控分页。Renderer 只持有序列化结果；当前页 CSV 经过大小和行列校验后，由 Main 进程写入用户在系统保存对话框中选择的位置。

@@ -7,7 +7,7 @@ export interface DatabaseTunnel {
 }
 
 export interface DatabaseAdapter {
-  readonly type: 'mysql' | 'postgres'
+  readonly type: 'mysql' | 'postgres' | 'sqlite'
   readonly database?: string
   readonly serverVersion: string
   ping(): Promise<void>

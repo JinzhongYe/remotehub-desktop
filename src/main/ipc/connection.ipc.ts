@@ -37,7 +37,7 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     if (!connection) return { ok: false, code: 'CONNECTION_FAILED', message: 'Connection not found', latencyMs: 0, testedAt: Date.now() } satisfies ConnectionTestResult
     const result = connection.type === 'serial' && testSerial
       ? await testSerial(connection.host, connection.port)
-      : connection.type === 'database' && (connection.databaseType === 'mysql' || connection.databaseType === 'postgres') && testDatabase
+      : connection.type === 'database' && testDatabase
         ? await testDatabase(connection)
         : await testTcpConnection(connection.host, connection.port)
     if (result.ok) storage.markConnected(id, result.testedAt)

@@ -1,0 +1,40 @@
+import { describe, expect, it } from 'vitest'
+import { databaseResultToCsv } from '../src/shared/database'
+import { SqliteAdapter } from '../src/main/services/database/sqlite'
+
+describe('Phase 8 SQLite workspace', () => {
+  it('exposes schema with bounded pages and blocks writes', async () => {
+    const database = {
+      pragma: () => [{ name: 'main' }],
+      prepare: (sql: string) => ({
+        reader: !sql.startsWith('INSERT'),
+        all: () => sql.includes('sqlite_schema') ? [{ name: 'devices', type: 'table' }]
+          : sql.startsWith('PRAGMA') ? [
+              { cid: 0, name: 'id', type: 'INTEGER', notnull: 0, dflt_value: null, pk: 1 },
+              { cid: 1, name: 'name', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 }
+            ] : [],
+        columns: () => [{ name: 'id', table: 'devices', type: 'INTEGER' }, { name: 'name', table: 'devices', type: 'TEXT' }],
+        raw: () => ({ all: () => [[1, 'alpha'], [2, 'beta']] })
+      }),
+      close: () => undefined
+    }
+    const adapter = new SqliteAdapter(database as never, 'SQLite test')
+
+    await expect(adapter.listDatabases()).resolves.toContainEqual({ name: 'main', system: false })
+    await expect(adapter.listTables('main')).resolves.toContainEqual({ database: 'main', name: 'devices', type: 'table' })
+    await expect(adapter.listColumns('main', 'devices')).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'id', key: 'PRI' }), expect.objectContaining({ name: 'name', nullable: false })
+    ]))
+    await expect(adapter.query({ sql: 'SELECT * FROM devices ORDER BY id', pageSize: 1 })).resolves.toMatchObject({
+      kind: 'rows', rows: [[1, 'alpha']], hasMore: true
+    })
+    await expect(adapter.query({ sql: "INSERT INTO devices VALUES (3, 'gamma')" })).rejects.toMatchObject({ code: 'DATABASE_READ_ONLY' })
+    adapter.close()
+  })
+
+  it('exports the current result page as valid CSV', () => {
+    expect(databaseResultToCsv({
+      fileName: 'devices.csv', columns: ['name', 'note'], rows: [['alpha', 'one, two'], ['"beta"', 'line\nbreak']]
+    })).toBe('name,note\r\nalpha,"one, two"\r\n"""beta""","line\nbreak"')
+  })
+})

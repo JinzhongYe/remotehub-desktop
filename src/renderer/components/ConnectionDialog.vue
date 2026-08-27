@@ -39,13 +39,13 @@ watch(() => [props.open, props.connection], () => {
 }, { immediate: true })
 
 function submit(): void {
-  emit('save', { ...form, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim(), authType: form.type === 'database' ? 'password' : form.authType }, credential.value || undefined, clearCredential.value, form.type === 'ssh' ? privateKeyPath.value || undefined : undefined)
+  emit('save', { ...form, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim(), authType: form.type === 'database' ? form.databaseType === 'sqlite' ? undefined : 'password' : form.authType }, credential.value || undefined, clearCredential.value, form.type === 'ssh' ? privateKeyPath.value || undefined : undefined)
 }
 
 function changeType(): void {
   if (form.type === 'database') {
-    if (form.port === 22 || form.port === 115200 || form.port > 65535) form.port = form.databaseType === 'mysql' ? 3306 : 5432
-    form.authType = 'password'
+    if (form.port === 22 || form.port === 115200 || form.port > 65535) form.port = form.databaseType === 'mysql' ? 3306 : form.databaseType === 'postgres' ? 5432 : 1
+    form.authType = form.databaseType === 'sqlite' ? undefined : 'password'
   }
   if (form.type === 'ssh' && (form.port === 5432 || form.port === 115200 || form.port > 65535)) form.port = 22
   if (form.type === 'serial') {
@@ -58,8 +58,8 @@ function changeType(): void {
 }
 
 function changeDatabaseType(): void {
-  const previousDefaults = form.port === 3306 || form.port === 5432
-  if (previousDefaults) form.port = form.databaseType === 'mysql' ? 3306 : 5432
+  form.port = form.databaseType === 'mysql' ? 3306 : form.databaseType === 'postgres' ? 5432 : 1
+  form.authType = form.databaseType === 'sqlite' ? undefined : 'password'
 }
 
 async function loadSerialPorts(): Promise<void> {
@@ -79,6 +79,11 @@ async function choosePrivateKey(): Promise<void> {
     clearCredential.value = false
   }
 }
+
+async function chooseDatabaseFile(): Promise<void> {
+  const path = await window.api.app.chooseDatabaseFile()
+  if (path) form.host = path
+}
 </script>
 
 <template>
@@ -91,24 +96,24 @@ async function choosePrivateKey(): Promise<void> {
       <div class="dialog-grid">
         <label class="field wide"><span>{{ t('name') }}</span><input v-model="form.name" required placeholder="dev-server / MES PG"></label>
         <label class="field"><span>{{ t('type') }}</span><select v-model="form.type" @change="changeType"><option value="ssh">SSH Server</option><option value="database">Database</option><option value="serial">Serial / 串口</option></select></label>
-        <label class="field"><span>{{ form.type === 'serial' ? t('baudRate') : t('port') }}</span><input v-model.number="form.port" type="number" min="1" :max="form.type === 'serial' ? 4000000 : 65535" required></label>
-        <label class="field wide"><span>{{ form.type === 'serial' ? t('serialPath') : t('host') }}</span><span v-if="form.type === 'serial'" class="input-with-action"><input v-model="form.host" required list="serial-port-list" placeholder="COM3 / /dev/ttyUSB0"><button type="button" class="button secondary" @click="loadSerialPorts">{{ t('refresh') }}</button></span><input v-else v-model="form.host" required placeholder="192.168.1.100 / db.example.com"><datalist id="serial-port-list"><option v-for="item in serialPorts" :key="item.path" :value="item.path">{{ item.manufacturer }}</option></datalist><small v-if="form.type === 'serial' && serialPortsError" class="field-error">{{ serialPortsError }}</small></label>
+        <label v-if="form.databaseType !== 'sqlite' || form.type !== 'database'" class="field"><span>{{ form.type === 'serial' ? t('baudRate') : t('port') }}</span><input v-model.number="form.port" type="number" min="1" :max="form.type === 'serial' ? 4000000 : 65535" required></label>
+        <label class="field wide"><span>{{ form.type === 'serial' ? t('serialPath') : form.type === 'database' && form.databaseType === 'sqlite' ? t('databaseFile') : t('host') }}</span><span v-if="form.type === 'serial'" class="input-with-action"><input v-model="form.host" required list="serial-port-list" placeholder="COM3 / /dev/ttyUSB0"><button type="button" class="button secondary" @click="loadSerialPorts">{{ t('refresh') }}</button></span><span v-else-if="form.type === 'database' && form.databaseType === 'sqlite'" class="input-with-action"><input v-model="form.host" required placeholder="/data/app.db"><button type="button" class="button secondary" @click="chooseDatabaseFile">{{ t('chooseFile') }}</button></span><input v-else v-model="form.host" required placeholder="192.168.1.100 / db.example.com"><datalist id="serial-port-list"><option v-for="item in serialPorts" :key="item.path" :value="item.path">{{ item.manufacturer }}</option></datalist><small v-if="form.type === 'serial' && serialPortsError" class="field-error">{{ serialPortsError }}</small></label>
         <template v-if="form.type !== 'serial'">
-          <label class="field"><span>{{ t('username') }}</span><input v-model="form.username" :required="form.type === 'database'" :placeholder="form.type === 'database' ? 'root / app_user' : t('optional')"></label>
+          <label v-if="form.type !== 'database' || form.databaseType !== 'sqlite'" class="field"><span>{{ t('username') }}</span><input v-model="form.username" :required="form.type === 'database'" :placeholder="form.type === 'database' ? 'root / app_user' : t('optional')"></label>
           <label v-if="form.type === 'ssh'" class="field"><span>{{ t('authType') }}</span><select v-model="form.authType"><option value="privateKey">Private Key</option><option value="password">{{ t('passwordVault') }}</option></select></label>
         </template>
         <template v-if="form.type === 'database'">
           <label class="field"><span>{{ t('databaseType') }}</span><select v-model="form.databaseType" @change="changeDatabaseType"><option value="mysql">MySQL · Phase 6</option><option value="postgres">PostgreSQL · Phase 7</option><option value="sqlite">SQLite · Phase 8</option></select></label>
-          <label class="field"><span>{{ t('defaultDatabase') }}</span><input v-model="form.database" :placeholder="t('optional')"></label>
+          <label v-if="form.databaseType !== 'sqlite'" class="field"><span>{{ t('defaultDatabase') }}</span><input v-model="form.database" :placeholder="t('optional')"></label>
           <label v-if="form.databaseType === 'postgres'" class="field"><span>{{ t('sslMode') }}</span><select v-model="form.databaseSslMode"><option value="disable">{{ t('sslDisable') }}</option><option value="require">{{ t('sslRequire') }}</option><option value="verify-full">{{ t('sslVerify') }}</option></select></label>
           <label v-if="form.databaseType === 'postgres'" class="field"><span>{{ t('sshTunnel') }}</span><select v-model="form.sshTunnelId"><option :value="undefined">{{ t('noTunnel') }}</option><option v-for="item in connections.filter((candidate) => candidate.type === 'ssh')" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
         </template>
         <label class="field"><span>{{ t('group') }}</span><select v-model="form.groupId"><option :value="undefined">{{ t('noGroup') }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></label>
-        <label v-if="form.type !== 'serial'" class="field wide"><span>{{ form.authType === 'privateKey' ? t('privateKey') : t('credential') }}</span><template v-if="form.authType === 'privateKey'"><span class="private-key-picker"><button type="button" class="button secondary" @click="choosePrivateKey">{{ t('choosePrivateKey') }}</button><small :title="privateKeyPath">{{ privateKeyPath ? privateKeyFileName(privateKeyPath) : t('noFileSelected') }}</small></span><textarea v-model="credential" rows="4" autocomplete="off" :disabled="Boolean(privateKeyPath)" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('privateKeyPlaceholder')"></textarea><button v-if="privateKeyPath" type="button" class="text-button align-start" @click="privateKeyPath = ''">{{ t('pasteInstead') }}</button></template><input v-else v-model="credential" type="password" autocomplete="new-password" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('newCredentialPlaceholder')"></label>
+        <label v-if="form.type !== 'serial' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="field wide"><span>{{ form.authType === 'privateKey' ? t('privateKey') : t('credential') }}</span><template v-if="form.authType === 'privateKey'"><span class="private-key-picker"><button type="button" class="button secondary" @click="choosePrivateKey">{{ t('choosePrivateKey') }}</button><small :title="privateKeyPath">{{ privateKeyPath ? privateKeyFileName(privateKeyPath) : t('noFileSelected') }}</small></span><textarea v-model="credential" rows="4" autocomplete="off" :disabled="Boolean(privateKeyPath)" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('privateKeyPlaceholder')"></textarea><button v-if="privateKeyPath" type="button" class="text-button align-start" @click="privateKeyPath = ''">{{ t('pasteInstead') }}</button></template><input v-else v-model="credential" type="password" autocomplete="new-password" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('newCredentialPlaceholder')"></label>
       </div>
       <label class="favorite-check"><input v-model="form.favorite" type="checkbox"><span>{{ t('favorite') }}</span></label>
-      <label v-if="connection?.credentialId && form.type !== 'serial'" class="favorite-check"><input v-model="clearCredential" type="checkbox"><span>{{ t('clearCredential') }}</span></label>
-      <p v-if="form.type !== 'serial'" class="dialog-note">{{ t('credentialNote') }}</p>
+      <label v-if="connection?.credentialId && form.type !== 'serial' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="favorite-check"><input v-model="clearCredential" type="checkbox"><span>{{ t('clearCredential') }}</span></label>
+      <p v-if="form.type !== 'serial' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="dialog-note">{{ t('credentialNote') }}</p>
       <div class="dialog-actions"><button type="button" class="button secondary" @click="emit('close')">{{ t('cancel') }}</button><button type="submit" class="button primary">{{ t('saveConnection') }}</button></div>
     </form>
   </div>

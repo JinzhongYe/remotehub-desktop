@@ -61,7 +61,7 @@
 
 - PostgresAdapter、SSL、游标分页、SSH Tunnel，不修改数据库 UI 主体。
 
-## Phase 8 — SQLite
+## Phase 8 — SQLite（已完成）
 
 - 打开本地 `.db` 文件、只读查询、表结构和导出。
 
