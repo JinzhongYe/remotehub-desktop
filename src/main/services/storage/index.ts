@@ -20,6 +20,7 @@ type ConnectionRow = {
   database_type: string | null
   database_name: string | null
   credential_id: string | null
+  host_key_fingerprint: string | null
   group_id: string | null
   favorite: number
   sort_order: number
@@ -61,6 +62,7 @@ export class StorageService {
         database_type TEXT,
         database_name TEXT,
         credential_id TEXT,
+        host_key_fingerprint TEXT,
         group_id TEXT,
         favorite INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0,
@@ -74,6 +76,7 @@ export class StorageService {
       `)
       ensureColumn(db, 'connections', 'sort_order', 'INTEGER NOT NULL DEFAULT 0')
       ensureColumn(db, 'connections', 'last_connected_at', 'INTEGER')
+      ensureColumn(db, 'connections', 'host_key_fingerprint', 'TEXT')
       this.db = db
     } catch {
       // Native modules can be unavailable immediately after a dependency install.
@@ -98,19 +101,16 @@ export class StorageService {
     this.validateConnection(input)
     const normalized = normalizeConnection(input)
     const now = Date.now()
-    const existingCreatedAt = input.id
-      ? this.db
-        ? (this.db.prepare('SELECT created_at FROM connections WHERE id = ?').get(input.id) as { created_at: number } | undefined)?.created_at
-        : this.fallbackData.connections.find((item) => item.id === input.id)?.createdAt
-      : undefined
+    const previous = input.id ? this.getConnection(input.id) : undefined
     const connection: Connection = {
       ...normalized,
       id: input.id || randomUUID(),
-      createdAt: existingCreatedAt ?? now,
+      createdAt: previous?.createdAt ?? now,
       updatedAt: now,
       favorite: Boolean(input.favorite),
       sortOrder: input.sortOrder ?? this.nextConnectionOrder(),
-      lastConnectedAt: input.id ? this.getConnection(input.id)?.lastConnectedAt : undefined
+      lastConnectedAt: previous?.lastConnectedAt,
+      hostKeyFingerprint: normalized.type === 'ssh' && previous?.type === 'ssh' && previous.host === normalized.host && previous.port === normalized.port ? previous.hostKeyFingerprint : undefined
     }
     if (!this.db) {
       const index = this.fallbackData.connections.findIndex((item) => item.id === connection.id)
@@ -122,9 +122,9 @@ export class StorageService {
     this.db.prepare(`
       INSERT INTO connections (
         id, name, type, host, port, username, auth_type, database_type,
-        database_name, credential_id, group_id, favorite, sort_order, last_connected_at, created_at, updated_at
+        database_name, credential_id, host_key_fingerprint, group_id, favorite, sort_order, last_connected_at, created_at, updated_at
       ) VALUES (@id, @name, @type, @host, @port, @username, @authType, @databaseType,
-        @database, @credentialId, @groupId, @favorite, @sortOrder, @lastConnectedAt, @createdAt, @updatedAt)
+        @database, @credentialId, @hostKeyFingerprint, @groupId, @favorite, @sortOrder, @lastConnectedAt, @createdAt, @updatedAt)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         type = excluded.type,
@@ -135,11 +135,12 @@ export class StorageService {
         database_type = excluded.database_type,
         database_name = excluded.database_name,
         credential_id = excluded.credential_id,
+        host_key_fingerprint = excluded.host_key_fingerprint,
         group_id = excluded.group_id,
         favorite = excluded.favorite,
         sort_order = excluded.sort_order,
         updated_at = excluded.updated_at
-    `).run({ ...connection, favorite: connection.favorite ? 1 : 0, authType: connection.authType || null, databaseType: connection.databaseType || null, database: connection.database || null, credentialId: connection.credentialId || null, groupId: connection.groupId || null, lastConnectedAt: connection.lastConnectedAt || null })
+    `).run({ ...connection, favorite: connection.favorite ? 1 : 0, authType: connection.authType || null, databaseType: connection.databaseType || null, database: connection.database || null, credentialId: connection.credentialId || null, hostKeyFingerprint: connection.hostKeyFingerprint || null, groupId: connection.groupId || null, lastConnectedAt: connection.lastConnectedAt || null })
     return connection
   }
 
@@ -180,6 +181,20 @@ export class StorageService {
       return
     }
     this.db.prepare('UPDATE connections SET last_connected_at = ? WHERE id = ?').run(timestamp, id)
+  }
+
+  trustHostKey(id: string, fingerprint: string): void {
+    if (!/^SHA256:[A-Za-z0-9+/]{43}$/.test(fingerprint)) throw appError('SSH_HOST_KEY_INVALID', 'Host key fingerprint is invalid')
+    const connection = this.getConnection(id)
+    if (!connection || connection.type !== 'ssh') throw appError('CONNECTION_NOT_FOUND', 'SSH connection not found')
+    const updatedAt = Date.now()
+    if (!this.db) {
+      connection.hostKeyFingerprint = fingerprint
+      connection.updatedAt = updatedAt
+      persistFallback(this.fallbackPath, this.fallbackData)
+      return
+    }
+    this.db.prepare('UPDATE connections SET host_key_fingerprint = ?, updated_at = ? WHERE id = ?').run(fingerprint, updatedAt, id)
   }
 
   saveGroup(nameInput: string, id?: string): Group {
@@ -260,7 +275,7 @@ function persistFallback(path: string, data: FallbackData): void {
   writeFileSync(path, JSON.stringify(data, null, 2), 'utf8')
 }
 
-function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'createdAt' | 'updatedAt'> {
+function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'createdAt' | 'updatedAt' | 'hostKeyFingerprint'> {
   const name = String(input.name || '').trim()
   const host = String(input.host || '').trim()
   if (!name || !host) throw appError('INVALID_CONNECTION', '连接名称和主机地址不能为空')
@@ -295,6 +310,7 @@ function toConnection(row: ConnectionRow): Connection {
     databaseType: row.database_type as Connection['databaseType'],
     database: row.database_name || undefined,
     credentialId: row.credential_id || undefined,
+    hostKeyFingerprint: row.host_key_fingerprint || undefined,
     groupId: row.group_id || undefined,
     favorite: Boolean(row.favorite),
     sortOrder: row.sort_order,

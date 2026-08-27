@@ -15,10 +15,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const tabs = ref<WorkspaceTab[]>([{ id: 'welcome', type: 'welcome', title: 'Workspace', closable: false }])
   const activeId = ref('welcome')
   const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeId.value) || tabs.value[0])
+  let nextTabId = 0
 
-  function openConnection(connectionId: string, title: string): void {
-    const id = `connection:${connectionId}`
-    if (!tabs.value.some((tab) => tab.id === id)) tabs.value.push({ id, type: 'terminal', title, connectionId, closable: true })
+  function openConnection(connectionId: string, title: string, type: 'terminal' | 'sql'): void {
+    const id = `connection:${connectionId}:${++nextTabId}`
+    tabs.value.push({ id, type, title, connectionId, closable: true })
     activeId.value = id
   }
 

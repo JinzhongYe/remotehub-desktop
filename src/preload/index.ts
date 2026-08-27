@@ -4,7 +4,8 @@ import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
 
 const api = {
   app: {
-    getInfo: () => ipcRenderer.invoke('app:getInfo')
+    getInfo: () => ipcRenderer.invoke('app:getInfo'),
+    copyText: (text: string) => ipcRenderer.invoke('app:copyText', text)
   },
   connections: {
     list: () => ipcRenderer.invoke('connections:list'),
@@ -16,6 +17,7 @@ const api = {
   },
   ssh: {
     connect: (connectionId: string) => ipcRenderer.invoke('ssh:connect', connectionId),
+    trustHostKey: (connectionId: string, fingerprint: string) => ipcRenderer.invoke('ssh:trustHostKey', connectionId, fingerprint),
     write: (sessionId: string, data: string) => ipcRenderer.invoke('ssh:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('ssh:resize', sessionId, cols, rows),
     disconnect: (sessionId: string) => ipcRenderer.invoke('ssh:disconnect', sessionId),

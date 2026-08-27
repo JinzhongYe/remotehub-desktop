@@ -9,6 +9,10 @@ export function registerSshIpc(storage: StorageService, ssh: SshService): void {
     if (!connection) throw storageError('CONNECTION_NOT_FOUND', 'Connection not found')
     return ssh.connect(connection)
   })
+  ipcMain.handle('ssh:trustHostKey', (_event, connectionId: string, fingerprint: string) => {
+    ssh.trustHostKey(connectionId, fingerprint)
+    return { ok: true }
+  })
   ipcMain.handle('ssh:write', (_event, sessionId: string, data: string) => {
     ssh.write(sessionId, data)
     return { ok: true }

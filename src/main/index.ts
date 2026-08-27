@@ -41,7 +41,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   storage = new StorageService()
   const credentials = new CredentialService()
-  ssh = new SshService(credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
+  ssh = new SshService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   registerAppIpc()
   registerConnectionIpc(storage, credentials)
   registerSshIpc(storage, ssh)

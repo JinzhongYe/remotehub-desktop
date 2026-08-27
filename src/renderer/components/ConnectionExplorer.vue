@@ -66,20 +66,20 @@ function drop(beforeId?: string, groupId?: string): void {
       <button class="link-button" @click="emit('create')">{{ t('createFirst') }}</button>
     </div>
     <div v-else class="connection-tree">
-      <div v-for="group in groups" :key="group.id" class="connection-group" @dragover.prevent @drop="drop(undefined, group.id)">
-        <div class="group-label"><span>{{ group.name }}</span><span class="group-actions"><button :title="t('renameGroup')" @click="emit('editGroup', group)">✎</button><button :title="t('deleteGroup')" @click="emit('removeGroup', group)">×</button></span></div>
+      <details v-for="group in groups" :key="group.id" class="connection-group" open @dragover.prevent @drop="drop(undefined, group.id)">
+        <summary class="group-label"><span>{{ group.name }}</span><span class="group-actions"><button :title="t('renameGroup')" @click.stop.prevent="emit('editGroup', group)">✎</button><button :title="t('deleteGroup')" @click.stop.prevent="emit('removeGroup', group)">×</button></span></summary>
         <div v-for="connection in inGroup(group.id)" :key="connection.id" class="connection-row" :class="{ selected: selectedId === connection.id }" role="button" tabindex="0" draggable="true" @dragstart="startDrag($event, connection.id)" @dragover.stop.prevent @drop.stop="drop(connection.id, group.id)" @click="emit('select', connection.id)" @keydown.enter="emit('select', connection.id)">
           <span class="connection-icon" :class="connection.type">{{ connectionIcon(connection) }}</span><span class="connection-copy"><strong>{{ connection.name }}</strong><small>{{ connection.host }}:{{ connection.port }}</small></span><span v-if="connection.favorite" class="favorite">★</span>
           <span class="row-actions"><button class="row-action" :title="t('test')" @click.stop="emit('test', connection)">✓</button><button class="row-action" :title="t('duplicate')" @click.stop="emit('duplicate', connection)">⧉</button><button class="row-action" :title="t('edit')" @click.stop="emit('edit', connection)">⋯</button><button class="row-action danger" :title="t('remove')" @click.stop="emit('remove', connection)">×</button></span>
         </div>
-      </div>
-      <div class="connection-group" @dragover.prevent @drop="drop()">
-        <div class="group-label">{{ t('ungrouped') }}</div>
+      </details>
+      <details class="connection-group" open @dragover.prevent @drop="drop()">
+        <summary class="group-label"><span>{{ t('ungrouped') }}</span></summary>
         <div v-for="connection in inGroup()" :key="connection.id" class="connection-row" :class="{ selected: selectedId === connection.id }" role="button" tabindex="0" draggable="true" @dragstart="startDrag($event, connection.id)" @dragover.stop.prevent @drop.stop="drop(connection.id)" @click="emit('select', connection.id)" @keydown.enter="emit('select', connection.id)">
           <span class="connection-icon" :class="connection.type">{{ connectionIcon(connection) }}</span><span class="connection-copy"><strong>{{ connection.name }}</strong><small>{{ connection.host }}:{{ connection.port }}</small></span><span v-if="connection.favorite" class="favorite">★</span>
           <span class="row-actions"><button class="row-action" :title="t('test')" @click.stop="emit('test', connection)">✓</button><button class="row-action" :title="t('duplicate')" @click.stop="emit('duplicate', connection)">⧉</button><button class="row-action" :title="t('edit')" @click.stop="emit('edit', connection)">⋯</button><button class="row-action danger" :title="t('remove')" @click.stop="emit('remove', connection)">×</button></span>
         </div>
-      </div>
+      </details>
     </div>
     <div class="explorer-footer">
       <span class="secure-dot"></span>

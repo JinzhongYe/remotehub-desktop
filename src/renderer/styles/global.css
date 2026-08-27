@@ -54,8 +54,12 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .empty-mark { margin-bottom: 6px; color: var(--blue); font-size: 20px; }
 .empty-explorer p { margin: 0 0 6px; }
 .connection-tree { overflow: auto; padding: 0 8px; }
-.group-label { display: flex; align-items: center; justify-content: space-between; min-height: 27px; padding: 9px 7px 5px; color: var(--subtle); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
+.group-label { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 9px 7px 5px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; list-style: none; }
+.group-label::-webkit-details-marker { display: none; }
+.group-label::before { content: '›'; color: var(--subtle); font-size: 15px; transition: transform .15s ease; }
+.connection-group[open] > .group-label::before { transform: rotate(90deg); }
 .group-actions { display: none; }
+.group-label .group-actions { margin-left: auto; }
 .group-label:hover .group-actions { display: inline-flex; }
 .group-actions button { border: 0; color: var(--subtle); background: transparent; }
 .recent-connections { display: flex; align-items: center; gap: 5px; overflow-x: auto; margin: 0 10px 7px; color: var(--subtle); font-size: 9px; }
@@ -66,8 +70,8 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .connection-icon { display: grid; width: 25px; height: 25px; flex: 0 0 25px; place-items: center; border-radius: 5px; color: var(--green); background: rgba(121,217,173,.1); font-size: 9px; font-weight: 700; }
 .connection-icon.database { color: #d6b5ff; background: rgba(214,181,255,.1); }
 .connection-copy { min-width: 0; flex: 1; }
-.connection-copy strong { display: block; overflow: hidden; color: #e0e8f1; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.connection-copy small { display: block; overflow: hidden; margin-top: 3px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.connection-copy strong { display: block; overflow: hidden; color: #e0e8f1; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.connection-copy small { display: block; overflow: hidden; margin-top: 3px; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .favorite { color: var(--yellow); font-size: 11px; }
 .row-actions { display: flex; opacity: 0; }
 .connection-row:hover .row-actions, .connection-row:focus-within .row-actions, .connection-row.selected .row-actions { opacity: 1; }
@@ -84,7 +88,8 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .tab-close { margin-left: auto; border: 0; color: var(--subtle); background: transparent; font-size: 14px; }
 .tab-close:hover { color: var(--text); }
 .new-tab { width: 35px; border: 0; color: var(--muted); background: transparent; font-size: 17px; }
-.workspace-content { min-height: 0; flex: 1; overflow: auto; }
+.workspace-content { min-height: 0; flex: 1; overflow: hidden; }
+.workspace-placeholder { height: 100%; overflow: auto; }
 .terminal-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #0a0f15; }
 .terminal-toolbar { display: flex; align-items: center; gap: 9px; min-height: 36px; padding: 0 12px; border-bottom: 1px solid var(--line-soft); color: var(--muted); background: #111821; }
 .terminal-kind { padding: 3px 5px; border: 1px solid rgba(121,217,173,.35); border-radius: 3px; color: var(--green); background: rgba(121,217,173,.08); font-size: 9px; font-weight: 700; }
@@ -94,9 +99,15 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .terminal-status.error .status-dot, .terminal-status.closed .status-dot { background: var(--red); box-shadow: 0 0 8px rgba(255,142,152,.55); }
 .terminal-message { max-width: min(42vw, 420px); overflow: hidden; color: var(--red); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .terminal-toolbar .toolbar-button { padding: 4px 8px; font-size: 10px; }
+.terminal-host-key { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid rgba(244,201,120,.35); color: var(--yellow); background: rgba(244,201,120,.08); font-size: 10px; }
+.terminal-host-key code { color: var(--text); user-select: all; }
+.terminal-host-key .toolbar-button { margin-left: auto; }
 .terminal-host { min-height: 0; flex: 1; padding: 12px 14px; }
 .terminal-host .xterm { height: 100%; }
 .terminal-host .xterm-viewport { overflow-y: auto !important; }
+.terminal-context-menu { position: fixed; z-index: 30; min-width: 82px; padding: 4px; border: 1px solid #3b4958; border-radius: 5px; background: #1b2430; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.terminal-context-menu button { width: 100%; padding: 6px 12px; border: 0; border-radius: 3px; color: var(--text); background: transparent; text-align: left; }
+.terminal-context-menu button:hover { background: #2a3745; }
 .welcome-view { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); text-align: center; }
 .welcome-glyph { display: grid; width: 55px; height: 55px; place-items: center; margin-bottom: 18px; border: 1px solid rgba(128,183,255,.5); border-radius: 12px; color: var(--blue); background: rgba(128,183,255,.08); font-weight: 800; letter-spacing: -1px; }
 .welcome-view h1 { margin: 0; color: #e8eff7; font-size: 22px; font-weight: 600; }

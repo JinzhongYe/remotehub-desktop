@@ -1,6 +1,6 @@
 # RemoteHub Desktop
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本进入 Phase 2 SSH：可以管理、分组、复制、排序、收藏和测试连接，并通过安全的 SSH 会话打开 xterm.js 终端；SFTP、MySQL、PostgreSQL 和 SQLite 远程工作区会在后续阶段接入。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本完成 Phase 3 SSH 稳定性：可以管理、分组、复制、排序、收藏和测试连接，并通过安全的 SSH 会话打开多个 xterm.js 终端；SFTP、MySQL、PostgreSQL 和 SQLite 远程工作区会在后续阶段接入。
 
 ## 当前交付
 
@@ -8,9 +8,9 @@ RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当�
 - 安全的 Renderer / Main 分层和白名单 preload IPC
 - `better-sqlite3` 本地存储连接与分组
 - Connection Explorer、Workspace、Status Bar 和连接编辑弹窗
-- 中英文切换、分组与拖动排序、最近连接和 TCP 可达性测试
+- 中英文切换、可折叠分组与拖动排序、最近连接和 TCP 可达性测试
 - 系统保护的凭据引用（macOS Keychain、Windows DPAPI、Linux Secret Service）
-- SSH 密码 / Private Key 登录、终端输入输出、窗口 resize、断开和重连
+- SSH 密码 / Private Key 登录、Host Key 指纹确认、终端多开、右键复制、resize、断开和重连
 - 紧凑的深色开发工具界面
 
 Phase 1 的“连接测试”只检查目标主机和端口是否可达，不会登录 SSH 或数据库。SSH 终端会在 Main 进程通过 `ssh2` 建立会话，Renderer 只能通过白名单 IPC 收发终端数据。敏感凭据经 Electron `safeStorage` 使用操作系统加密能力保存，SQLite 只保存随机引用标识；Linux 检测到明文后端时会拒绝保存。
