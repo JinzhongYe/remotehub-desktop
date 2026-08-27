@@ -1,5 +1,7 @@
 allowBuilds:
   better-sqlite3: true
+  cpu-features: set this to true or false
   electron: true
   esbuild: true
+  ssh2: set this to true or false
   vue-demi: true

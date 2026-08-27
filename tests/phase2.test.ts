@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SshDataEvent, SshStatusEvent } from '../src/shared/ssh'
+import { sshErrorCode, type SshDataEvent, type SshStatusEvent } from '../src/shared/ssh'
 
 describe('Phase 2 SSH foundation', () => {
   it('uses serializable payloads for terminal output and status events', () => {
@@ -21,5 +21,10 @@ describe('Phase 2 SSH foundation', () => {
     expect(status).toMatchObject({ status: 'error', code: 'SSH_TIMEOUT' })
     expect(status).not.toHaveProperty('password')
     expect(status).not.toHaveProperty('privateKey')
+  })
+
+  it('distinguishes rejected credentials from network failures', () => {
+    expect(sshErrorCode(undefined, 'client-authentication')).toBe('SSH_AUTHENTICATION_FAILED')
+    expect(sshErrorCode('ETIMEDOUT')).toBe('SSH_TIMEOUT')
   })
 })
