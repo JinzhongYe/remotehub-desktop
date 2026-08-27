@@ -57,7 +57,7 @@
 - Result Grid、影响行数、耗时、错误映射，以及 `SELECT`/`WITH` 服务端分页。
 - 单页默认 200 行、最大 500 行、SQL 最大 1 MB、查询 30 秒超时和单 Session 串行保护。
 
-## Phase 7 — PostgreSQL
+## Phase 7 — PostgreSQL（已完成）
 
 - PostgresAdapter、SSL、游标分页、SSH Tunnel，不修改数据库 UI 主体。
 

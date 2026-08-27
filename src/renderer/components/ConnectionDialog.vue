@@ -5,10 +5,10 @@ import type { SerialPortInfo } from '../../shared/serial'
 import { privateKeyFileName } from '../../shared/private-key'
 import { t } from '../i18n'
 
-const props = defineProps<{ open: boolean; connection?: Connection | null; groups: Group[] }>()
+const props = defineProps<{ open: boolean; connection?: Connection | null; groups: Group[]; connections: Connection[] }>()
 const emit = defineEmits<{ close: []; save: [value: ConnectionInput, credential?: string, clearCredential?: boolean, privateKeyPath?: string] }>()
 
-const form = reactive<ConnectionInput>({ name: '', type: 'ssh', host: '', port: 22, username: '', authType: 'privateKey', databaseType: 'mysql', database: '', favorite: false })
+const form = reactive<ConnectionInput>({ name: '', type: 'ssh', host: '', port: 22, username: '', authType: 'privateKey', databaseType: 'mysql', database: '', databaseSslMode: 'disable', favorite: false })
 const credential = ref('')
 const clearCredential = ref(false)
 const privateKeyPath = ref('')
@@ -26,6 +26,8 @@ watch(() => [props.open, props.connection], () => {
   form.authType = form.type === 'database' ? 'password' : item?.authType || 'privateKey'
   form.databaseType = item?.databaseType || 'mysql'
   form.database = item?.database || ''
+  form.databaseSslMode = item?.databaseSslMode || 'disable'
+  form.sshTunnelId = item?.sshTunnelId
   form.credentialId = item?.credentialId
   form.groupId = item?.groupId
   form.favorite = item?.favorite || false
@@ -98,6 +100,8 @@ async function choosePrivateKey(): Promise<void> {
         <template v-if="form.type === 'database'">
           <label class="field"><span>{{ t('databaseType') }}</span><select v-model="form.databaseType" @change="changeDatabaseType"><option value="mysql">MySQL · Phase 6</option><option value="postgres">PostgreSQL · Phase 7</option><option value="sqlite">SQLite · Phase 8</option></select></label>
           <label class="field"><span>{{ t('defaultDatabase') }}</span><input v-model="form.database" :placeholder="t('optional')"></label>
+          <label v-if="form.databaseType === 'postgres'" class="field"><span>{{ t('sslMode') }}</span><select v-model="form.databaseSslMode"><option value="disable">{{ t('sslDisable') }}</option><option value="require">{{ t('sslRequire') }}</option><option value="verify-full">{{ t('sslVerify') }}</option></select></label>
+          <label v-if="form.databaseType === 'postgres'" class="field"><span>{{ t('sshTunnel') }}</span><select v-model="form.sshTunnelId"><option :value="undefined">{{ t('noTunnel') }}</option><option v-for="item in connections.filter((candidate) => candidate.type === 'ssh')" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
         </template>
         <label class="field"><span>{{ t('group') }}</span><select v-model="form.groupId"><option :value="undefined">{{ t('noGroup') }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></label>
         <label v-if="form.type !== 'serial'" class="field wide"><span>{{ form.authType === 'privateKey' ? t('privateKey') : t('credential') }}</span><template v-if="form.authType === 'privateKey'"><span class="private-key-picker"><button type="button" class="button secondary" @click="choosePrivateKey">{{ t('choosePrivateKey') }}</button><small :title="privateKeyPath">{{ privateKeyPath ? privateKeyFileName(privateKeyPath) : t('noFileSelected') }}</small></span><textarea v-model="credential" rows="4" autocomplete="off" :disabled="Boolean(privateKeyPath)" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('privateKeyPlaceholder')"></textarea><button v-if="privateKeyPath" type="button" class="text-button align-start" @click="privateKeyPath = ''">{{ t('pasteInstead') }}</button></template><input v-else v-model="credential" type="password" autocomplete="new-password" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('newCredentialPlaceholder')"></label>

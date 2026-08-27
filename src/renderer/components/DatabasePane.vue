@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { basicSetup, EditorView } from 'codemirror'
-import { MySQL, sql } from '@codemirror/lang-sql'
+import { MySQL, PostgreSQL, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryResult, DatabaseTable } from '../../shared/database'
 import { DATABASE_PAGE_SIZE } from '../../shared/database'
 import { t } from '../i18n'
+import { useConnectionStore } from '../stores/connection'
 
 const props = defineProps<{ connectionId: string }>()
+const connections = useConnectionStore()
+const isPostgres = computed(() => connections.connections.find((item) => item.id === props.connectionId)?.databaseType === 'postgres')
 
 const editorHost = ref<HTMLElement | null>(null)
 const sessionId = ref('')
@@ -143,7 +146,7 @@ function showError(error: unknown): void {
 }
 
 function quoteIdentifier(value: string): string {
-  return `\`${value.replaceAll('`', '``')}\``
+  return isPostgres.value ? `"${value.replaceAll('"', '""')}"` : `\`${value.replaceAll('`', '``')}\``
 }
 
 function displayCell(value: string | number | boolean | null): string {
@@ -155,7 +158,7 @@ onMounted(async () => {
   if (editorHost.value) editor = new EditorView({
     parent: editorHost.value,
     doc: 'SELECT VERSION() AS version;',
-    extensions: [basicSetup, sql({ dialect: MySQL }), oneDark, EditorView.lineWrapping]
+    extensions: [basicSetup, sql({ dialect: isPostgres.value ? PostgreSQL : MySQL }), oneDark, EditorView.lineWrapping]
   })
   await connect()
 })
@@ -170,8 +173,8 @@ onBeforeUnmount(() => {
 <template>
   <section class="database-pane">
     <header class="database-toolbar">
-      <span class="database-kind">MY</span>
-      <strong>{{ t('mysqlWorkspace') }}</strong>
+      <span class="database-kind">{{ isPostgres ? 'PG' : 'MY' }}</span>
+      <strong>{{ t(isPostgres ? 'postgresWorkspace' : 'mysqlWorkspace') }}</strong>
       <select v-model="selectedDatabase" :disabled="!sessionId || connecting" @change="changeDatabase">
         <option v-if="!databases.length" value="">{{ t('noDatabase') }}</option>
         <option v-for="database in databases" :key="database.name" :value="database.name">{{ database.name }}{{ database.system ? ` · ${t('systemDatabase')}` : '' }}</option>

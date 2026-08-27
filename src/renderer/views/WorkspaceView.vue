@@ -155,18 +155,18 @@ async function removeGroup(group: Group): Promise<void> {
 </script>
 
 <template>
-  <div class="app-frame">
+  <div class="app-frame" :class="{ darwin: appInfo?.platform === 'darwin' }">
     <header class="top-toolbar">
       <div class="brand"><span class="brand-mark">RH</span><div><strong>RemoteHub</strong><small>DESKTOP WORKBENCH</small></div></div>
       <div class="toolbar-context"><span class="toolbar-label">{{ t('workspace') }}</span><span class="toolbar-separator">/</span><span>{{ connectionStore.selected?.name || t('noSelection') }}</span></div>
-      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button><span class="window-pill">Phase 6</span></div>
+      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button><span class="window-pill">Phase 7</span></div>
     </header>
     <div class="app-body">
       <ConnectionExplorer :connections="connectionStore.filteredConnections" :recent-connections="connectionStore.recentConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
       <main class="main-workspace"><WorkspaceShell :shortcut-modifier="shortcutModifier" /></main>
     </div>
     <footer class="status-bar"><span class="status-item"><span class="status-dot"></span>{{ statusText }}</span><span class="status-item">{{ appInfo?.platform || 'desktop' }} · {{ t('localOnly') }}</span><span class="status-item version">{{ appInfo?.version ? `v${appInfo.version}` : 'v0.1.0' }}</span></footer>
-    <ConnectionDialog :open="dialogOpen" :connection="editing" :groups="connectionStore.groups" @close="dialogOpen = false" @save="saveConnection" />
+    <ConnectionDialog :open="dialogOpen" :connection="editing" :groups="connectionStore.groups" :connections="connectionStore.connections" @close="dialogOpen = false" @save="saveConnection" />
     <div v-if="groupDialogOpen" class="modal-layer" @click.self="groupDialogOpen = false">
       <form class="connection-dialog" @submit.prevent="saveGroup">
         <div class="dialog-heading"><div><span class="eyebrow">{{ t('group') }}</span><h2>{{ editingGroup ? t('renameGroup') : t('newGroup') }}</h2></div><button type="button" class="icon-button" :aria-label="t('cancel')" @click="groupDialogOpen = false">×</button></div>

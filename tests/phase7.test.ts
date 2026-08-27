@@ -1,0 +1,51 @@
+import { describe, expect, it, vi } from 'vitest'
+import { DatabaseService } from '../src/main/services/database'
+import type { DatabaseAdapter } from '../src/main/services/database/adapter'
+import { buildPostgresCursorCommands, mapPostgresError, postgresSsl } from '../src/main/services/database/postgres'
+import type { Connection } from '../src/shared/types'
+
+describe('Phase 7 PostgreSQL adapter', () => {
+  it('uses bounded server-side cursor commands and explicit SSL modes', () => {
+    expect(buildPostgresCursorCommands(3, 200)).toEqual({
+      move: 'MOVE ABSOLUTE 600 IN "__remotehub_page"',
+      fetch: 'FETCH FORWARD 201 FROM "__remotehub_page"'
+    })
+    expect(postgresSsl('disable')).toBe(false)
+    expect(postgresSsl('require')).toEqual({ rejectUnauthorized: false })
+    expect(postgresSsl('verify-full')).toEqual({ rejectUnauthorized: true })
+  })
+
+  it('maps stable PostgreSQL errors', () => {
+    expect(mapPostgresError(Object.assign(new Error('denied'), { code: '28P01' })).code).toBe('DATABASE_AUTH_FAILED')
+    expect(mapPostgresError(Object.assign(new Error('missing'), { code: '3D000' })).code).toBe('DATABASE_NOT_FOUND')
+    expect(mapPostgresError(Object.assign(new Error('syntax'), { code: '42601' })).code).toBe('DATABASE_SQL_INVALID')
+  })
+
+  it('routes PostgreSQL through the selected trusted SSH asset', async () => {
+    const tunnel: Connection = {
+      id: 'ssh-1', name: 'Bastion', type: 'ssh', host: 'bastion.local', port: 22, username: 'ops', authType: 'privateKey',
+      credentialId: 'ssh-secret', hostKeyFingerprint: `SHA256:${'A'.repeat(43)}`, favorite: false, sortOrder: 0, createdAt: 1, updatedAt: 1
+    }
+    const connection: Connection = {
+      id: 'pg-1', name: 'Analytics', type: 'database', databaseType: 'postgres', host: 'postgres.internal', port: 5432,
+      username: 'app', database: 'analytics', databaseSslMode: 'verify-full', sshTunnelId: tunnel.id,
+      credentialId: 'pg-secret', favorite: false, sortOrder: 0, createdAt: 1, updatedAt: 1
+    }
+    const close = vi.fn()
+    const adapter: DatabaseAdapter = {
+      type: 'postgres', database: 'public', serverVersion: 'PostgreSQL 17', ping: async () => undefined,
+      listDatabases: async () => [], useDatabase: async () => undefined, listTables: async () => [], listColumns: async () => [],
+      query: async () => ({ kind: 'rows', columns: [], rows: [], page: 0, pageSize: 200, hasMore: false, affectedRows: 0, changedRows: 0, warningStatus: 0, durationMs: 1, statement: 'SELECT' }), close
+    }
+    const postgresFactory = { connect: vi.fn(async () => adapter) }
+    const storage = { getConnection: (id: string) => id === tunnel.id ? tunnel : undefined, markConnected: vi.fn() }
+    const credentials = { get: (id?: string) => id === 'pg-secret' ? 'db-password' : id === 'ssh-secret' ? 'private-key' : undefined }
+    const service = new DatabaseService(storage as never, credentials as never, { connect: vi.fn() }, postgresFactory)
+
+    await service.connect(connection)
+
+    expect(postgresFactory.connect).toHaveBeenCalledWith(connection, 'db-password', { connection: tunnel, credential: 'private-key' })
+    service.dispose()
+    expect(close).toHaveBeenCalledOnce()
+  })
+})

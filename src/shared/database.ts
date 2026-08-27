@@ -1,4 +1,4 @@
-export type DatabaseAdapterType = 'mysql'
+export type DatabaseAdapterType = 'mysql' | 'postgres'
 export type DatabaseObjectType = 'table' | 'view'
 export type DatabaseCell = string | number | boolean | null
 

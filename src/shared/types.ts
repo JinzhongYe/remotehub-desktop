@@ -1,5 +1,6 @@
 export type ConnectionType = 'ssh' | 'database' | 'serial'
 export type DatabaseType = 'mysql' | 'postgres' | 'sqlite'
+export type DatabaseSslMode = 'disable' | 'require' | 'verify-full'
 export type AuthType = 'password' | 'privateKey'
 
 export interface Connection {
@@ -12,6 +13,8 @@ export interface Connection {
   authType?: AuthType
   databaseType?: DatabaseType
   database?: string
+  databaseSslMode?: DatabaseSslMode
+  sshTunnelId?: string
   credentialId?: string
   hostKeyFingerprint?: string
   groupId?: string
@@ -32,6 +35,8 @@ export interface ConnectionInput {
   authType?: AuthType
   databaseType?: DatabaseType
   database?: string
+  databaseSslMode?: DatabaseSslMode
+  sshTunnelId?: string
   credentialId?: string
   groupId?: string
   favorite?: boolean

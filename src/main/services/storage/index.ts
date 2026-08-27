@@ -19,6 +19,8 @@ type ConnectionRow = {
   auth_type: string | null
   database_type: string | null
   database_name: string | null
+  database_ssl_mode: string | null
+  ssh_tunnel_id: string | null
   credential_id: string | null
   host_key_fingerprint: string | null
   group_id: string | null
@@ -61,6 +63,8 @@ export class StorageService {
         auth_type TEXT,
         database_type TEXT,
         database_name TEXT,
+        database_ssl_mode TEXT,
+        ssh_tunnel_id TEXT,
         credential_id TEXT,
         host_key_fingerprint TEXT,
         group_id TEXT,
@@ -78,6 +82,8 @@ export class StorageService {
       ensureColumn(db, 'connections', 'last_connected_at', 'INTEGER')
       ensureColumn(db, 'connections', 'host_key_fingerprint', 'TEXT')
       migrateConnectionTypes(db)
+      ensureColumn(db, 'connections', 'database_ssl_mode', 'TEXT')
+      ensureColumn(db, 'connections', 'ssh_tunnel_id', 'TEXT')
       this.db = db
     } catch {
       // Native modules can be unavailable immediately after a dependency install.
@@ -123,9 +129,9 @@ export class StorageService {
     this.db.prepare(`
       INSERT INTO connections (
         id, name, type, host, port, username, auth_type, database_type,
-        database_name, credential_id, host_key_fingerprint, group_id, favorite, sort_order, last_connected_at, created_at, updated_at
+        database_name, database_ssl_mode, ssh_tunnel_id, credential_id, host_key_fingerprint, group_id, favorite, sort_order, last_connected_at, created_at, updated_at
       ) VALUES (@id, @name, @type, @host, @port, @username, @authType, @databaseType,
-        @database, @credentialId, @hostKeyFingerprint, @groupId, @favorite, @sortOrder, @lastConnectedAt, @createdAt, @updatedAt)
+        @database, @databaseSslMode, @sshTunnelId, @credentialId, @hostKeyFingerprint, @groupId, @favorite, @sortOrder, @lastConnectedAt, @createdAt, @updatedAt)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         type = excluded.type,
@@ -135,13 +141,15 @@ export class StorageService {
         auth_type = excluded.auth_type,
         database_type = excluded.database_type,
         database_name = excluded.database_name,
+        database_ssl_mode = excluded.database_ssl_mode,
+        ssh_tunnel_id = excluded.ssh_tunnel_id,
         credential_id = excluded.credential_id,
         host_key_fingerprint = excluded.host_key_fingerprint,
         group_id = excluded.group_id,
         favorite = excluded.favorite,
         sort_order = excluded.sort_order,
         updated_at = excluded.updated_at
-    `).run({ ...connection, favorite: connection.favorite ? 1 : 0, authType: connection.authType || null, databaseType: connection.databaseType || null, database: connection.database || null, credentialId: connection.credentialId || null, hostKeyFingerprint: connection.hostKeyFingerprint || null, groupId: connection.groupId || null, lastConnectedAt: connection.lastConnectedAt || null })
+    `).run({ ...connection, favorite: connection.favorite ? 1 : 0, authType: connection.authType || null, databaseType: connection.databaseType || null, database: connection.database || null, databaseSslMode: connection.databaseSslMode || null, sshTunnelId: connection.sshTunnelId || null, credentialId: connection.credentialId || null, hostKeyFingerprint: connection.hostKeyFingerprint || null, groupId: connection.groupId || null, lastConnectedAt: connection.lastConnectedAt || null })
     return connection
   }
 
@@ -294,6 +302,8 @@ function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'c
     authType: type === 'serial' ? undefined : input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : undefined,
     databaseType: type === 'database' && ['mysql', 'postgres', 'sqlite'].includes(input.databaseType || '') ? input.databaseType : undefined,
     database: type === 'database' ? String(input.database || '').trim().slice(0, 200) || undefined : undefined,
+    databaseSslMode: type === 'database' && input.databaseType === 'postgres' && ['disable', 'require', 'verify-full'].includes(input.databaseSslMode || '') ? input.databaseSslMode : undefined,
+    sshTunnelId: type === 'database' && input.databaseType === 'postgres' ? String(input.sshTunnelId || '').trim().slice(0, 100) || undefined : undefined,
     credentialId: type === 'serial' ? undefined : String(input.credentialId || '').trim().slice(0, 160) || undefined,
     groupId: String(input.groupId || '').trim().slice(0, 100) || undefined,
     favorite: Boolean(input.favorite),
@@ -312,6 +322,8 @@ function toConnection(row: ConnectionRow): Connection {
     authType: row.auth_type as Connection['authType'],
     databaseType: row.database_type as Connection['databaseType'],
     database: row.database_name || undefined,
+    databaseSslMode: row.database_ssl_mode as Connection['databaseSslMode'] || undefined,
+    sshTunnelId: row.ssh_tunnel_id || undefined,
     credentialId: row.credential_id || undefined,
     hostKeyFingerprint: row.host_key_fingerprint || undefined,
     groupId: row.group_id || undefined,

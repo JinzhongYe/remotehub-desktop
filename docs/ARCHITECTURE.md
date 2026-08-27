@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 6 交付连接管理、系统凭据引用、Host Key 固定、独立 SSH/SFTP/串口工作区、受控 SFTP 传输队列和 MySQL 工作区；所有设备与远程连接仍在 Main 进程实现。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 7 交付连接管理、系统凭据引用、Host Key 固定、独立 SSH/SFTP/串口工作区、受控 SFTP 传输队列以及 MySQL/PostgreSQL 工作区；所有设备与远程连接仍在 Main 进程实现。
 
 ## Electron 分层
 
@@ -71,8 +71,9 @@ sessionId、connectionId、状态、错误码、展示元数据
 - `SFTPService`：独立 SSH/SFTP 会话、目录操作、递归传输计划、覆盖检查和文件流适配。
 - `TransferManager`：内存队列、双并发调度、任务状态、进度限流、暂停/继续、取消和重试。
 - `SerialService`：跨平台设备枚举、串口会话、输入输出和连接测试。
-- `DatabaseService`：独立数据库 Session、并发保护和统一 Adapter 接口；Phase 6 接入 MySQLAdapter。
+- `DatabaseService`：独立数据库 Session、并发保护和统一 Adapter 接口；Phase 6–7 接入 MySQLAdapter 与 PostgresAdapter。
 - `MySQLAdapter`：密码认证、结构元数据、数据库切换、查询分页、结果序列化和稳定错误映射。
+- `PostgresAdapter`：Schema 元数据、服务端游标分页、SSL 和经可信 SSH 资产建立的隧道。
 - `StorageService`：本地 SQLite 只保存连接元数据和 `credentialId`，不保存密码。
 - `CredentialService`：通过 Electron `safeStorage` 对接 macOS Keychain、Windows DPAPI 和 Linux Secret Service；Linux 明文后端不可用。
 
@@ -137,3 +138,7 @@ SFTPService 先递归生成文件传输计划并检查同名目标；Renderer �
 ## Phase 6 运行路径
 
 MySQL SQL Tab 创建独立 Database Session。Main 进程从 StorageService 读取连接元数据、从 CredentialService 解密密码，再由 MySQLAdapter 建立 `mysql2` 连接；Renderer 不接触驱动或密码。结构 Explorer 通过 `information_schema` 获取表和字段，SQL Editor 只提交 SQL、页码和页大小。`SELECT`/`WITH` 会追加受控 `LIMIT/OFFSET`；原语句已有顶层 `LIMIT` 时使用派生表包装，每页默认 200 行并多取一行判断下一页。其他语句直接执行。日期、大整数、二进制和对象在 Main 进程转换为可序列化单元格后才通过 IPC 返回。单个 Session 同时只执行一个查询，SQL 限制 1 MB，驱动查询超时为 30 秒，关闭 Tab 时销毁连接。
+
+## Phase 7 运行路径
+
+PostgreSQL SQL Tab 复用数据库 UI，把 Schema 映射为结构 Explorer 的顶层目录。`SELECT`/`WITH` 在只读事务中通过 `DECLARE SCROLL CURSOR`、`MOVE` 和 `FETCH` 分页，切换 SQL 或执行写操作时关闭游标。连接可启用 SSL 加密或严格证书校验；SSH Tunnel 复用已有 SSH 资产、系统凭据和已固定的 Host Key，通过 `forwardOut` 将 PostgreSQL 流量直接送入数据库驱动，不开放本地监听端口。

@@ -5,18 +5,23 @@ import { CredentialService } from '../credentials'
 import { appError, StorageService } from '../storage'
 import type { DatabaseAdapter, DatabaseAdapterFactory } from './adapter'
 import { mapMysqlError, mysqlAdapterFactory } from './mysql'
+import { mapPostgresError, postgresAdapterFactory } from './postgres'
 
 type DatabaseSession = { id: string; connectionId: string; adapter: DatabaseAdapter; busy: boolean }
 
 export class DatabaseService {
   private readonly sessions = new Map<string, DatabaseSession>()
 
-  constructor(private readonly storage: StorageService, private readonly credentials: CredentialService, private readonly mysqlFactory: DatabaseAdapterFactory = mysqlAdapterFactory) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly credentials: CredentialService,
+    private readonly mysqlFactory: DatabaseAdapterFactory = mysqlAdapterFactory,
+    private readonly postgresFactory: DatabaseAdapterFactory = postgresAdapterFactory
+  ) {}
 
   async connect(connection: Connection): Promise<DatabaseConnectResult> {
     if (connection.type !== 'database') throw appError('DATABASE_CONNECTION_INVALID', 'A database connection is required')
-    if (connection.databaseType !== 'mysql') throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Phase 6 supports MySQL connections only')
-    const adapter = await this.mysqlFactory.connect(connection, this.credentials.get(connection.credentialId))
+    const adapter = await this.connectAdapter(connection)
     const sessionId = randomUUID()
     try { this.storage.markConnected(connection.id, Date.now()) } catch (error) { adapter.close(); throw error }
     this.sessions.set(sessionId, { id: sessionId, connectionId: connection.id, adapter, busy: false })
@@ -27,12 +32,12 @@ export class DatabaseService {
     const startedAt = Date.now()
     let adapter: DatabaseAdapter | undefined
     try {
-      if (connection.type !== 'database' || connection.databaseType !== 'mysql') throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Database adapter is not available in this phase')
-      adapter = await this.mysqlFactory.connect(connection, this.credentials.get(connection.credentialId))
+      if (connection.type !== 'database') throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Database adapter is not available')
+      adapter = await this.connectAdapter(connection)
       await adapter.ping()
-      return { ok: true, code: 'OK', message: 'MySQL authentication succeeded', latencyMs: Date.now() - startedAt, testedAt: Date.now() }
+      return { ok: true, code: 'OK', message: `${adapter.type === 'postgres' ? 'PostgreSQL' : 'MySQL'} authentication succeeded`, latencyMs: Date.now() - startedAt, testedAt: Date.now() }
     } catch (error) {
-      const failure = mapMysqlError(error)
+      const failure = connection.databaseType === 'postgres' ? mapPostgresError(error) : mapMysqlError(error)
       const code: ConnectionTestResult['code'] = failure.code === 'DATABASE_AUTH_FAILED' ? 'AUTHENTICATION_FAILED'
         : failure.code === 'DATABASE_NOT_FOUND' ? 'DATABASE_NOT_FOUND'
           : failure.code === 'DATABASE_TIMEOUT' ? 'CONNECTION_TIMEOUT'
@@ -84,5 +89,17 @@ export class DatabaseService {
     const session = this.sessions.get(sessionId)
     if (!session) throw appError('DATABASE_SESSION_NOT_FOUND', 'Database session is closed or missing')
     return session
+  }
+
+  private async connectAdapter(connection: Connection): Promise<DatabaseAdapter> {
+    const factory = connection.databaseType === 'mysql' ? this.mysqlFactory : connection.databaseType === 'postgres' ? this.postgresFactory : undefined
+    if (!factory) throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Database adapter is not available in this phase')
+    if (!connection.sshTunnelId) return factory.connect(connection, this.credentials.get(connection.credentialId))
+    const tunnelConnection = this.storage.getConnection(connection.sshTunnelId)
+    if (!tunnelConnection || tunnelConnection.type !== 'ssh') throw appError('DATABASE_TUNNEL_INVALID', 'Selected SSH tunnel connection does not exist')
+    return factory.connect(connection, this.credentials.get(connection.credentialId), {
+      connection: tunnelConnection,
+      credential: this.credentials.get(tunnelConnection.credentialId)
+    })
   }
 }

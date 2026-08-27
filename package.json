@@ -21,7 +21,8 @@
     "@codemirror/theme-one-dark": "^6.1.2",
     "better-sqlite3": "^11.8.1",
     "codemirror": "^6.0.1",
-    "mysql2": "^3.15.3",
+    "mysql2": "^3.24.2",
+    "pg": "^8.23.0",
     "pinia": "^2.3.0",
     "serialport": "^13.0.0",
     "ssh2": "^1.17.0",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.5",
+    "@types/pg": "^8.23.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "concurrently": "^9.1.2",
     "electron": "^34.0.0",
