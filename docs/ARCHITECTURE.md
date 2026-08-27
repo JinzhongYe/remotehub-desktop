@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP 和数据库能力。Phase 0 只交付桌面壳、连接资产、SQLite 存储和安全 IPC 骨架，不在渲染进程实现远程连接。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP 和数据库能力。当前 Phase 1 交付连接管理、系统凭据引用和 TCP 可达性测试，不在渲染进程实现远程连接。
 
 ## Electron 分层
 
@@ -34,6 +34,10 @@ connections:list
 connections:save
 connections:delete
 connections:duplicate
+connections:reorder
+connections:test
+groups:save
+groups:delete
 ```
 
 后续扩展：
@@ -62,7 +66,7 @@ sessionId、connectionId、状态、错误码、展示元数据
 - `SFTPService`：目录、文件信息、传输和 TransferManager。
 - `DatabaseService`：统一 Adapter 接口；第一阶段实现 MySQL、PostgreSQL、SQLite。
 - `StorageService`：本地 SQLite 只保存连接元数据和 `credentialId`，不保存密码。
-- `CredentialService`：对接 Windows Credential Manager、macOS Keychain、Linux Secret Service。
+- `CredentialService`：通过 Electron `safeStorage` 对接 macOS Keychain、Windows DPAPI 和 Linux Secret Service；Linux 明文后端不可用。
 
 ## 数据结构
 
@@ -97,3 +101,7 @@ interface Connection {
 ## Phase 0 运行路径
 
 Renderer 通过 `connections:list/save/delete` 验证 IPC；Main 进程打开用户数据目录中的 `remotehub.db`，初始化 `connections` 与 `groups` 表。若原生 SQLite 模块刚安装尚未就绪，StorageService 会回退到同目录的元数据 JSON 文件，且仍不保存任何凭据。远程连接服务在 Phase 2 以后接入，Phase 0 不创建 SSH、SFTP 或数据库网络 Session。
+
+## Phase 1 运行路径
+
+Renderer 通过白名单 IPC 管理连接与分组。连接顺序、最近成功测试时间和随机 `credentialId` 写入 SQLite；敏感值由 Main 进程加密后写入权限受限的凭据文件。`connections:test` 只执行五秒超时的 TCP 可达性检查，并返回稳定错误码，不建立 SSH 或数据库会话。

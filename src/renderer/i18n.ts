@@ -1,0 +1,27 @@
+import { ref } from 'vue'
+
+export type Locale = 'zh-CN' | 'en'
+
+const messages = {
+  'zh-CN': {
+    workspace: '工作区', noSelection: '未选择连接', newConnection: '新建连接', connections: '连接', add: '新增', searchConnections: '搜索连接', myServers: '我的服务器', emptyConnections: '还没有连接资产', createFirst: '创建第一个连接', localSecure: '本地存储 · 凭据由系统保护', recent: '最近连接', ungrouped: '未分组', newGroup: '新建分组', renameGroup: '重命名分组', deleteGroup: '删除分组', edit: '编辑', duplicate: '复制', test: '测试连接', remove: '删除', connectionAsset: '连接资产', editConnection: '编辑连接', name: '名称', type: '类型', port: '端口', host: '主机地址', username: '用户名', optional: '可选', authType: '认证方式', passwordVault: '密码（系统钥匙串）', databaseType: '数据库类型', defaultDatabase: '默认数据库', group: '分组', noGroup: '不分组', credential: '密码 / 私钥口令', credentialPlaceholder: '留空则保留现有凭据', newCredentialPlaceholder: '可选；安全保存到系统凭据库', clearCredential: '删除已保存凭据', favorite: '加入收藏', credentialNote: '敏感凭据使用操作系统加密服务保存；连接数据库中只保留引用标识。', cancel: '取消', saveConnection: '保存连接', newTab: '新建工作区标签', tagline: '连接资产、终端、文件和数据库的本地工作区。', searchShortcut: '搜索连接', addShortcut: '新增连接', doubleClick: '双击', openWorkspace: '打开工作区', phaseReady: 'Phase 1 · 连接管理器', workspaceReady: '工作区就绪', terminalPhase: 'Phase 2 接入 SSH Session', sftpPhase: 'Phase 4 接入文件工作区', databasePhase: 'Phase 6–8 接入数据库 Adapter', initializing: '正在初始化…', ready: '就绪', initFailed: '初始化失败', saved: '连接资产已保存', saveFailed: '保存失败', deleted: '连接资产已删除', duplicated: '已复制连接', testOk: '连接成功（{latency} ms）', testFailed: '连接失败：{code}', groupName: '分组名称', renameGroupPrompt: '新的分组名称', deleteConnectionConfirm: '删除连接“{name}”？', deleteGroupConfirm: '删除分组“{name}”？连接会移到未分组。', localOnly: '仅本地'
+  },
+  en: {
+    workspace: 'Workspace', noSelection: 'No connection selected', newConnection: 'New connection', connections: 'Connections', add: 'Add', searchConnections: 'Search connections', myServers: 'My servers', emptyConnections: 'No connections yet', createFirst: 'Create your first connection', localSecure: 'Local storage · OS-protected credentials', recent: 'Recent', ungrouped: 'Ungrouped', newGroup: 'New group', renameGroup: 'Rename group', deleteGroup: 'Delete group', edit: 'Edit', duplicate: 'Duplicate', test: 'Test connection', remove: 'Delete', connectionAsset: 'CONNECTION ASSET', editConnection: 'Edit connection', name: 'Name', type: 'Type', port: 'Port', host: 'Host', username: 'Username', optional: 'Optional', authType: 'Authentication', passwordVault: 'Password (system keychain)', databaseType: 'Database type', defaultDatabase: 'Default database', group: 'Group', noGroup: 'No group', credential: 'Password / key passphrase', credentialPlaceholder: 'Leave blank to keep the saved credential', newCredentialPlaceholder: 'Optional; stored in the system credential store', clearCredential: 'Delete saved credential', favorite: 'Add to favorites', credentialNote: 'Secrets are protected by the operating system; the connection database stores only a reference.', cancel: 'Cancel', saveConnection: 'Save connection', newTab: 'New workspace tab', tagline: 'A local workspace for connections, terminals, files, and databases.', searchShortcut: 'Search connections', addShortcut: 'New connection', doubleClick: 'Double-click', openWorkspace: 'Open workspace', phaseReady: 'Phase 1 · Connection Manager', workspaceReady: 'WORKSPACE READY', terminalPhase: 'SSH session arrives in Phase 2', sftpPhase: 'File workspace arrives in Phase 4', databasePhase: 'Database adapters arrive in Phases 6–8', initializing: 'Initializing…', ready: 'Ready', initFailed: 'Initialization failed', saved: 'Connection saved', saveFailed: 'Save failed', deleted: 'Connection deleted', duplicated: 'Connection duplicated', testOk: 'Connected ({latency} ms)', testFailed: 'Connection failed: {code}', groupName: 'Group name', renameGroupPrompt: 'New group name', deleteConnectionConfirm: 'Delete “{name}”?', deleteGroupConfirm: 'Delete group “{name}”? Its connections will become ungrouped.', localOnly: 'local only'
+  }
+} as const
+
+const stored = localStorage.getItem('remotehub.locale')
+export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
+
+export function t(key: keyof typeof messages.en, values: Record<string, string | number> = {}): string {
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), messages[locale.value][key] as string)
+}
+
+export function toggleLocale(): void {
+  locale.value = locale.value === 'zh-CN' ? 'en' : 'zh-CN'
+  localStorage.setItem('remotehub.locale', locale.value)
+  document.documentElement.lang = locale.value
+}
+
+document.documentElement.lang = locale.value

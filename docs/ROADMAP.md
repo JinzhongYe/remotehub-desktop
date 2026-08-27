@@ -1,6 +1,6 @@
 # RemoteHub Desktop Roadmap
 
-## Phase 0 — 项目骨架（当前）
+## Phase 0 — 项目骨架（已完成）
 
 - Electron + Vue 3 + TypeScript + Vite + Pinia。
 - 安全 BrowserWindow、preload 和白名单 IPC。
@@ -11,11 +11,13 @@
 
 验收：应用能启动；重启后连接资产仍存在；Renderer 不能直接触达 Node API；构建产物可加载。
 
-## Phase 1 — Connection Manager
+## Phase 1 — Connection Manager（当前）
 
 - 完整连接 CRUD、分组、复制、收藏和拖动排序。
 - 系统钥匙串凭据引用。
 - 连接测试、错误码和最近连接。
+- 中英文界面切换（本地记忆语言偏好）。
+- Windows / macOS 快捷键和系统凭据加密兼容。
 
 ## Phase 2 — SSH
 

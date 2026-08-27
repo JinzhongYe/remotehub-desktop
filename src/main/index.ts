@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { registerAppIpc } from './ipc/app.ipc'
 import { registerConnectionIpc } from './ipc/connection.ipc'
 import { StorageService } from './services/storage'
+import { CredentialService } from './services/credentials'
 
 let mainWindow: BrowserWindow | null = null
 let storage: StorageService | null = null
@@ -37,7 +38,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   storage = new StorageService()
   registerAppIpc()
-  registerConnectionIpc(storage)
+  registerConnectionIpc(storage, new CredentialService())
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })

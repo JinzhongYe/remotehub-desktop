@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Cross-platform SSH, SFTP and database workbench",
+  "engines": { "node": ">=20" },
   "main": "dist-electron/main/index.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "npm run build && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "build": "vite build && tsc -p tsconfig.node.json",
+    "dev": "npm run build && concurrently -k \"vite preview --configLoader native --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "vite build --configLoader native && tsc -p tsconfig.node.json",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "lint": "eslint . --ext .ts,.vue --ignore-pattern dist --ignore-pattern dist-electron",
-    "test": "vitest run",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron",
+    "test": "node scripts/run-tests.mjs",
     "start": "electron ."
   },
   "dependencies": {
