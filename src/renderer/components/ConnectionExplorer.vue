@@ -60,12 +60,12 @@ function drop(beforeId?: string, groupId?: string): void {
     </label>
     <div class="tree-caption"><span>{{ t('myServers') }}</span><span><button class="text-button" @click="emit('createGroup')">{{ t('newGroup') }}</button><button class="text-button" @click="emit('create')">{{ t('add') }}</button></span></div>
     <div v-if="recentConnections.length" class="recent-connections"><span>{{ t('recent') }}</span><button v-for="connection in recentConnections" :key="connection.id" @click="emit('select', connection.id)">{{ connection.name }}</button></div>
-    <div v-if="!connections.length" class="empty-explorer">
+    <div v-if="!connections.length && !groups.length" class="empty-explorer">
       <div class="empty-mark">＋</div>
       <p>{{ t('emptyConnections') }}</p>
       <button class="link-button" @click="emit('create')">{{ t('createFirst') }}</button>
     </div>
-    <div v-else class="connection-tree">
+    <div v-if="groups.length || connections.length" class="connection-tree">
       <details v-for="group in groups" :key="group.id" class="connection-group" open @dragover.prevent @drop="drop(undefined, group.id)">
         <summary class="group-label"><span>{{ group.name }}</span><span class="group-actions"><button :title="t('renameGroup')" @click.stop.prevent="emit('editGroup', group)">✎</button><button :title="t('deleteGroup')" @click.stop.prevent="emit('removeGroup', group)">×</button></span></summary>
         <div v-for="connection in inGroup(group.id)" :key="connection.id" class="connection-row" :class="{ selected: selectedId === connection.id }" role="button" tabindex="0" draggable="true" @dragstart="startDrag($event, connection.id)" @dragover.stop.prevent @drop.stop="drop(connection.id, group.id)" @click="emit('select', connection.id)" @keydown.enter="emit('select', connection.id)">
