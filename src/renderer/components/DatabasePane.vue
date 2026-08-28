@@ -2,8 +2,8 @@
 import { basicSetup, EditorView } from 'codemirror'
 import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryResult, DatabaseTable } from '../../shared/database'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { DatabaseCatalog, DatabaseCell, DatabaseColumn, DatabaseQueryResult, DatabaseTable } from '../../shared/database'
 import { DATABASE_PAGE_SIZE, databaseDisplayRows } from '../../shared/database'
 import { t } from '../i18n'
 import { useConnectionStore } from '../stores/connection'
@@ -40,6 +40,8 @@ const errorMessage = ref('')
 const serverVersion = ref('')
 const sqlLastSql = ref('')
 const tableLastSql = ref<Record<string, string>>({})
+const cellContextMenu = ref<{ x: number; y: number; row: DatabaseCell[]; rowIndex: number; columnIndex: number; value: DatabaseCell } | null>(null)
+const selectedCell = ref<{ row: DatabaseCell[]; rowNumber: number; columnIndex: number; columnName: string; columnType: string; value: DatabaseCell } | null>(null)
 let editor: EditorView | undefined
 let disposed = false
 
@@ -77,6 +79,11 @@ const resultSummary = computed(() => {
   return rowFilter.value.trim()
     ? t('visibleRows', { visible: displayRows.value.length, total: result.value.rows.length, duration: result.value.durationMs })
     : t('queryRows', { count: result.value.rows.length, duration: result.value.durationMs })
+})
+
+watch(result, () => {
+  cellContextMenu.value = null
+  selectedCell.value = null
 })
 
 async function connect(): Promise<void> {
@@ -294,6 +301,41 @@ function displayCell(value: string | number | boolean | null): string {
   return value == null ? 'NULL' : String(value)
 }
 
+function showCellContextMenu(event: MouseEvent, row: DatabaseCell[], rowIndex: number, columnIndex: number, value: DatabaseCell): void {
+  event.preventDefault()
+  event.stopPropagation()
+  cellContextMenu.value = {
+    x: Math.max(4, Math.min(event.clientX, window.innerWidth - 154)),
+    y: Math.max(4, Math.min(event.clientY, window.innerHeight - 48)),
+    row,
+    rowIndex,
+    columnIndex,
+    value
+  }
+}
+
+function showFullCellData(): void {
+  const target = cellContextMenu.value
+  if (!target || result.value?.kind !== 'rows') return
+  selectedCell.value = {
+    row: target.row,
+    rowNumber: result.value.page * result.value.pageSize + target.rowIndex + 1,
+    columnIndex: target.columnIndex,
+    columnName: result.value.columns[target.columnIndex]?.name || `#${target.columnIndex + 1}`,
+    columnType: columnType(target.columnIndex),
+    value: target.value
+  }
+  cellContextMenu.value = null
+}
+
+function closeCellDetail(): void {
+  selectedCell.value = null
+}
+
+function closeCellContextMenu(): void {
+  cellContextMenu.value = null
+}
+
 function showError(error: unknown): void {
   errorMessage.value = error instanceof Error ? error.message : t('databaseUnavailable')
 }
@@ -310,6 +352,7 @@ async function exportResult(): Promise<void> {
 }
 
 onMounted(async () => {
+  document.addEventListener('pointerdown', closeCellContextMenu)
   await nextTick()
   if (editorHost.value) editor = new EditorView({
     parent: editorHost.value,
@@ -321,6 +364,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disposed = true
+  document.removeEventListener('pointerdown', closeCellContextMenu)
   editor?.destroy()
   if (sessionId.value) void window.api.database.disconnect(sessionId.value).catch(() => undefined)
 })
@@ -405,15 +449,22 @@ onBeforeUnmount(() => {
             <div v-else-if="result.kind === 'mutation'" class="mutation-result"><strong>{{ t('queryCompleted') }}</strong><span>{{ t('affectedRows', { count: result.affectedRows, duration: result.durationMs }) }}</span><span v-if="result.insertId">Insert ID: {{ result.insertId }}</span></div>
             <table v-else class="result-grid">
               <thead><tr><th class="row-number">#</th><th v-for="(column, index) in result.columns" :key="`${column.name}:${index}`" :title="column.table"><button @click="toggleSort(index)"><span>{{ column.name }} <i v-if="sortColumn === index">{{ sortDirection === 'asc' ? '↑' : '↓' }}</i></span><small v-if="columnType(index)">{{ columnType(index) }}</small></button></th></tr></thead>
-              <tbody><tr v-for="(row, rowIndex) in displayRows" :key="rowIndex"><td class="row-number">{{ result.page * result.pageSize + rowIndex + 1 }}</td><td v-for="(cell, cellIndex) in row" :key="cellIndex" :class="{ null: cell == null }" :title="displayCell(cell)">{{ displayCell(cell) }}</td></tr></tbody>
+              <tbody><tr v-for="(row, rowIndex) in displayRows" :key="rowIndex"><td class="row-number">{{ result.page * result.pageSize + rowIndex + 1 }}</td><td v-for="(cell, cellIndex) in row" :key="cellIndex" :class="{ null: cell == null, selected: selectedCell?.row === row && selectedCell.columnIndex === cellIndex }" :title="displayCell(cell)" @contextmenu="showCellContextMenu($event, row, rowIndex, cellIndex, cell)">{{ displayCell(cell) }}</td></tr></tbody>
             </table>
           </div>
+          <section v-if="selectedCell" class="cell-detail-panel">
+            <header><strong>{{ t('cellDetail') }}</strong><span>{{ selectedCell.columnName }}<template v-if="selectedCell.columnType"> · {{ selectedCell.columnType }}</template></span><small>#{{ selectedCell.rowNumber }}</small><button :aria-label="t('closeView')" @click="closeCellDetail">×</button></header>
+            <textarea readonly spellcheck="false" :value="displayCell(selectedCell.value)"></textarea>
+          </section>
           <footer v-if="result?.kind === 'rows'" class="result-status">
             <code :title="lastSql">{{ lastSql }}</code><span>{{ resultSummary }}</span>
             <div class="result-pager"><button :disabled="running || result.page === 0" @click="runQuery(result.page - 1)">‹</button><span>{{ t('pageNumber', { page: result.page + 1 }) }}</span><button :disabled="running || !result.hasMore" @click="runQuery(result.page + 1)">›</button></div>
           </footer>
         </section>
       </main>
+    </div>
+    <div v-if="cellContextMenu" class="database-cell-context-menu" role="menu" :style="{ left: `${cellContextMenu.x}px`, top: `${cellContextMenu.y}px` }" @pointerdown.stop>
+      <button role="menuitem" @click="showFullCellData">{{ t('showFullData') }}</button>
     </div>
   </section>
 </template>

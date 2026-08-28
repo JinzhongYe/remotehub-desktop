@@ -319,6 +319,18 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .result-grid .row-number { position: sticky; left: 0; width: 48px; min-width: 48px; color: var(--subtle); background: #121921; text-align: right; }
 .result-grid th.row-number { z-index: 2; background: #151d26; }
 .result-grid td.null { color: #8d789e; font-style: italic; }
+.result-grid td.selected { outline: 1px solid var(--blue); outline-offset: -1px; background: rgba(128,183,255,.12); }
+.database-cell-context-menu { position: fixed; z-index: 60; min-width: 146px; padding: 4px; border: 1px solid #3b4958; border-radius: 5px; background: #1b2430; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.database-cell-context-menu button { width: 100%; padding: 7px 10px; border: 0; border-radius: 3px; color: var(--text); background: transparent; font-size: 11px; text-align: left; }
+.database-cell-context-menu button:hover { background: #2a3745; }
+.cell-detail-panel { display: flex; min-height: 120px; height: min(220px, 34%); flex: 0 0 min(220px, 34%); flex-direction: column; border-top: 1px solid var(--line); background: #0b1016; }
+.cell-detail-panel header { display: flex; min-height: 31px; flex: 0 0 31px; align-items: center; gap: 9px; padding: 0 9px; color: var(--muted); background: #151d26; font-size: 10px; }
+.cell-detail-panel header strong { color: var(--text); }
+.cell-detail-panel header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-detail-panel header small { margin-left: auto; color: var(--subtle); }
+.cell-detail-panel header button { width: 24px; height: 24px; border: 0; color: var(--muted); background: transparent; font-size: 17px; }
+.cell-detail-panel header button:hover { color: var(--text); }
+.cell-detail-panel textarea { min-height: 0; flex: 1; resize: none; padding: 10px; border: 0; outline: 0; color: var(--text); background: #080c11; font: 12px/1.5 "Cascadia Mono", Consolas, monospace; white-space: pre; }
 .result-status { display: flex; min-height: 28px; flex: 0 0 28px; align-items: center; gap: 10px; padding: 0 8px; border-top: 1px solid var(--line); color: var(--subtle); background: #111820; font-size: 9px; }
 .result-status code { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .result-status > span { white-space: nowrap; }

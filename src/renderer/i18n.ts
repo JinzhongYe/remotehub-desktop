@@ -27,7 +27,12 @@ const multiViewMessages = {
   en: { multiView: 'Window multi-view', singleView: 'Single view', doubleView: 'Dual view', quadView: 'Quad view', primaryView: 'Primary', closeView: 'Close this view' }
 } as const
 
-type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en
+const cellDataMessages = {
+  'zh-CN': { showFullData: '显示完整数据', cellDetail: '单元格完整数据' },
+  en: { showFullData: 'Show full data', cellDetail: 'Full cell data' }
+} as const
+
+type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en
 
 const stored = localStorage.getItem('remotehub.locale')
 export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
@@ -35,8 +40,9 @@ export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored
 export function t(key: MessageKey, values: Record<string, string | number> = {}): string {
   const overrides = phase6Messages[locale.value] as Record<string, string>
   const multiView = multiViewMessages[locale.value] as Record<string, string>
+  const cellData = cellDataMessages[locale.value] as Record<string, string>
   const defaults = messages[locale.value] as Record<string, string>
-  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), multiView[key] || overrides[key] || defaults[key] || key)
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
 }
 
 export function toggleLocale(): void {
