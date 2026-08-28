@@ -13,6 +13,7 @@ const status = ref<SshSessionStatus>('connecting')
 const statusMessage = ref('')
 const pendingFingerprint = ref('')
 const contextMenu = ref<{ x: number; y: number } | null>(null)
+const hasSelection = ref(false)
 
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -22,6 +23,7 @@ let removeDataListener: (() => void) | undefined
 let removeStatusListener: (() => void) | undefined
 let removeResizeListener: (() => void) | undefined
 let removeInputListener: (() => void) | undefined
+let removeSelectionListener: (() => void) | undefined
 let removeContextMenuListener: (() => void) | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
@@ -125,11 +127,12 @@ async function trustHostKey(): Promise<void> {
 
 function showContextMenu(event: MouseEvent): void {
   event.preventDefault()
-  if (!terminal?.hasSelection()) {
-    contextMenu.value = null
-    return
+  event.stopPropagation()
+  hasSelection.value = terminal?.hasSelection() ?? false
+  contextMenu.value = {
+    x: Math.max(4, Math.min(event.clientX, window.innerWidth - 104)),
+    y: Math.max(4, Math.min(event.clientY, window.innerHeight - 76))
   }
-  contextMenu.value = { x: Math.min(event.clientX, window.innerWidth - 90), y: Math.min(event.clientY, window.innerHeight - 40) }
 }
 
 async function copySelection(): Promise<void> {
@@ -142,6 +145,13 @@ async function copySelection(): Promise<void> {
   } catch (error) {
     statusMessage.value = error instanceof Error ? error.message : t('sshUnavailable')
   }
+}
+
+function selectAll(): void {
+  terminal?.selectAll()
+  hasSelection.value = terminal?.hasSelection() ?? false
+  contextMenu.value = null
+  terminal?.focus()
 }
 
 async function disconnect(): Promise<void> {
@@ -159,7 +169,14 @@ onMounted(() => {
     cursorBlink: true,
     fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: 13,
-    theme: { background: '#0a0f15', foreground: '#dbe7f4', cursor: '#68d6bd' },
+    theme: {
+      background: '#0a0f15',
+      foreground: '#dbe7f4',
+      cursor: '#68d6bd',
+      selectionBackground: '#315d86',
+      selectionForeground: '#ffffff',
+      selectionInactiveBackground: '#24425f'
+    },
     scrollback: 5000
   })
   fitAddon = new FitAddon()
@@ -174,6 +191,10 @@ onMounted(() => {
     })
   })
   removeInputListener = () => input.dispose()
+  const selection = terminal.onSelectionChange(() => {
+    hasSelection.value = terminal?.hasSelection() ?? false
+  })
+  removeSelectionListener = () => selection.dispose()
   const onWindowResize = (): void => resizeTerminal()
   window.addEventListener('resize', onWindowResize)
   removeResizeListener = () => window.removeEventListener('resize', onWindowResize)
@@ -194,6 +215,7 @@ onBeforeUnmount(() => {
   removeStatusListener?.()
   removeResizeListener?.()
   removeInputListener?.()
+  removeSelectionListener?.()
   removeContextMenuListener?.()
   if (sessionId) void window.api.ssh.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
@@ -213,9 +235,10 @@ onBeforeUnmount(() => {
     <div v-if="pendingFingerprint" class="terminal-host-key">
       <span>{{ t('hostKeyPrompt') }}</span><code>{{ t('hostKeyFingerprint') }}: {{ pendingFingerprint }}</code><button class="toolbar-button" @click="trustHostKey">{{ t('trustHostKey') }}</button>
     </div>
-    <div ref="terminalHost" class="terminal-host" @contextmenu="showContextMenu"></div>
-    <div v-if="contextMenu" class="terminal-context-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @pointerdown.stop>
-      <button @click="copySelection">{{ t('copy') }}</button>
+    <div ref="terminalHost" class="terminal-host" @contextmenu.capture.prevent.stop="showContextMenu"></div>
+    <div v-if="contextMenu" class="terminal-context-menu" role="menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @pointerdown.stop>
+      <button role="menuitem" :disabled="!hasSelection" @click="copySelection">{{ t('copy') }}</button>
+      <button role="menuitem" @click="selectAll">{{ t('selectAll') }}</button>
     </div>
   </section>
 </template>

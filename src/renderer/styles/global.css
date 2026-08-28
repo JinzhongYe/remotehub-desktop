@@ -131,9 +131,11 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .terminal-host { min-height: 0; flex: 1; padding: 12px 14px; }
 .terminal-host .xterm { height: 100%; }
 .terminal-host .xterm-viewport { overflow-y: auto !important; }
+.terminal-host .xterm-screen { cursor: text; }
 .terminal-context-menu { position: fixed; z-index: 30; min-width: 82px; padding: 4px; border: 1px solid #3b4958; border-radius: 5px; background: #1b2430; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
 .terminal-context-menu button { width: 100%; padding: 6px 12px; border: 0; border-radius: 3px; color: var(--text); background: transparent; text-align: left; }
 .terminal-context-menu button:hover { background: #2a3745; }
+.terminal-context-menu button:disabled { color: var(--subtle); background: transparent; }
 .welcome-view { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); text-align: center; }
 .welcome-glyph { display: grid; width: 55px; height: 55px; place-items: center; margin-bottom: 18px; border: 1px solid rgba(128,183,255,.5); border-radius: 12px; color: var(--blue); background: rgba(128,183,255,.08); font-weight: 800; letter-spacing: -1px; }
 .welcome-view h1 { margin: 0; color: #e8eff7; font-size: 22px; font-weight: 600; }
