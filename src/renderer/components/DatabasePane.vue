@@ -4,7 +4,7 @@ import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { DatabaseCatalog, DatabaseCell, DatabaseColumn, DatabaseQueryResult, DatabaseTable } from '../../shared/database'
-import { DATABASE_PAGE_SIZE, databaseDisplayRows } from '../../shared/database'
+import { DATABASE_PAGE_SIZE, databaseCellDetail, databaseDisplayRows } from '../../shared/database'
 import { t } from '../i18n'
 import { useConnectionStore } from '../stores/connection'
 
@@ -80,6 +80,7 @@ const resultSummary = computed(() => {
     ? t('visibleRows', { visible: displayRows.value.length, total: result.value.rows.length, duration: result.value.durationMs })
     : t('queryRows', { count: result.value.rows.length, duration: result.value.durationMs })
 })
+const selectedCellDetail = computed(() => selectedCell.value ? databaseCellDetail(selectedCell.value.value) : null)
 
 watch(result, () => {
   cellContextMenu.value = null
@@ -452,9 +453,9 @@ onBeforeUnmount(() => {
               <tbody><tr v-for="(row, rowIndex) in displayRows" :key="rowIndex"><td class="row-number">{{ result.page * result.pageSize + rowIndex + 1 }}</td><td v-for="(cell, cellIndex) in row" :key="cellIndex" :class="{ null: cell == null, selected: selectedCell?.row === row && selectedCell.columnIndex === cellIndex }" :title="displayCell(cell)" @contextmenu="showCellContextMenu($event, row, rowIndex, cellIndex, cell)">{{ displayCell(cell) }}</td></tr></tbody>
             </table>
           </div>
-          <section v-if="selectedCell" class="cell-detail-panel">
-            <header><strong>{{ t('cellDetail') }}</strong><span>{{ selectedCell.columnName }}<template v-if="selectedCell.columnType"> · {{ selectedCell.columnType }}</template></span><small>#{{ selectedCell.rowNumber }}</small><button :aria-label="t('closeView')" @click="closeCellDetail">×</button></header>
-            <textarea readonly spellcheck="false" :value="displayCell(selectedCell.value)"></textarea>
+          <section v-if="selectedCell && selectedCellDetail" class="cell-detail-panel">
+            <header><strong>{{ t('cellDetail') }}</strong><span>{{ selectedCell.columnName }}<template v-if="selectedCell.columnType"> · {{ selectedCell.columnType }}</template></span><b v-if="selectedCellDetail.format === 'json'">JSON</b><small>#{{ selectedCell.rowNumber }}</small><button :aria-label="t('closeView')" @click="closeCellDetail">×</button></header>
+            <textarea readonly spellcheck="false" :value="selectedCellDetail.text"></textarea>
           </section>
           <footer v-if="result?.kind === 'rows'" class="result-status">
             <code :title="lastSql">{{ lastSql }}</code><span>{{ resultSummary }}</span>

@@ -67,6 +67,11 @@ export interface DatabaseCsvExport {
   rows: DatabaseCell[][]
 }
 
+export interface DatabaseCellDetail {
+  text: string
+  format: 'text' | 'json'
+}
+
 export const DATABASE_PAGE_SIZE = 200
 export const DATABASE_MAX_PAGE_SIZE = 500
 export const DATABASE_MAX_SQL_LENGTH = 1024 * 1024
@@ -115,6 +120,20 @@ export function databaseResultToCsv(input: DatabaseCsvExport): string {
   const width = input.columns.length
   if (!width || input.rows.some((row) => !Array.isArray(row) || row.length !== width)) throw databaseInputError('DATABASE_EXPORT_INVALID', 'Export rows do not match the columns')
   return [input.columns, ...input.rows].map((row) => row.map(csvCell).join(',')).join('\r\n')
+}
+
+export function databaseCellDetail(value: DatabaseCell): DatabaseCellDetail {
+  const text = value == null ? 'NULL' : String(value)
+  if (typeof value !== 'string') return { text, format: 'text' }
+  const source = value.trim()
+  if (!(source.startsWith('{') && source.endsWith('}')) && !(source.startsWith('[') && source.endsWith(']'))) return { text, format: 'text' }
+  try {
+    const parsed = JSON.parse(source) as unknown
+    if (parsed == null || typeof parsed !== 'object') return { text, format: 'text' }
+    return { text: JSON.stringify(parsed, null, 2), format: 'json' }
+  } catch {
+    return { text, format: 'text' }
+  }
 }
 
 function csvCell(value: DatabaseCell): string {

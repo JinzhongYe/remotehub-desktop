@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { databaseDisplayRows, databaseResultToCsv } from '../src/shared/database'
+import { databaseCellDetail, databaseDisplayRows, databaseResultToCsv } from '../src/shared/database'
 import { SqliteAdapter } from '../src/main/services/database/sqlite'
 
 describe('Phase 8 SQLite workspace', () => {
@@ -41,5 +41,14 @@ describe('Phase 8 SQLite workspace', () => {
   it('filters and sorts the visible result page', () => {
     const rows = [[10, 'Beta'], [2, 'alpha'], [null, 'alphabet']] as const
     expect(databaseDisplayRows(rows.map((row) => [...row]), 'alpha', 0, 'desc')).toEqual([[null, 'alphabet'], [2, 'alpha']])
+  })
+
+  it('formats JSON cell values and leaves plain text unchanged', () => {
+    expect(databaseCellDetail('{"device":"A1","values":[1,{"ok":true}]}')).toEqual({
+      format: 'json',
+      text: '{\n  "device": "A1",\n  "values": [\n    1,\n    {\n      "ok": true\n    }\n  ]\n}'
+    })
+    expect(databaseCellDetail('{invalid json}')).toEqual({ format: 'text', text: '{invalid json}' })
+    expect(databaseCellDetail(null)).toEqual({ format: 'text', text: 'NULL' })
   })
 })

@@ -327,6 +327,7 @@ kbd { padding: 2px 4px; border: 1px solid #3a4653; border-radius: 3px; color: va
 .cell-detail-panel header { display: flex; min-height: 31px; flex: 0 0 31px; align-items: center; gap: 9px; padding: 0 9px; color: var(--muted); background: #151d26; font-size: 10px; }
 .cell-detail-panel header strong { color: var(--text); }
 .cell-detail-panel header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-detail-panel header b { padding: 2px 5px; border: 1px solid rgba(121,217,173,.35); border-radius: 3px; color: var(--green); background: rgba(121,217,173,.08); font-size: 9px; }
 .cell-detail-panel header small { margin-left: auto; color: var(--subtle); }
 .cell-detail-panel header button { width: 24px; height: 24px; border: 0; color: var(--muted); background: transparent; font-size: 17px; }
 .cell-detail-panel header button:hover { color: var(--text); }
