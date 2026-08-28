@@ -25,6 +25,7 @@ let removeResizeListener: (() => void) | undefined
 let removeInputListener: (() => void) | undefined
 let removeSelectionListener: (() => void) | undefined
 let removeContextMenuListener: (() => void) | undefined
+let resizeObserver: ResizeObserver | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
 
@@ -182,6 +183,8 @@ onMounted(() => {
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
+  resizeObserver = new ResizeObserver(() => { if (props.active) resizeTerminal() })
+  resizeObserver.observe(terminalHost.value)
   removeDataListener = window.api.ssh.onData(handleData)
   removeStatusListener = window.api.ssh.onStatus(handleStatus)
   const input = terminal.onData((data) => {
@@ -217,6 +220,7 @@ onBeforeUnmount(() => {
   removeInputListener?.()
   removeSelectionListener?.()
   removeContextMenuListener?.()
+  resizeObserver?.disconnect()
   if (sessionId) void window.api.ssh.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
 })

@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 export type WorkspaceTabType = 'welcome' | 'terminal' | 'sftp' | 'sql' | 'table'
+export type WorkspaceViewCount = 1 | 2 | 4
 
 export interface WorkspaceTab {
   id: string
@@ -19,11 +20,14 @@ const connectionTabTypes = new Set<WorkspaceTabType>(['terminal', 'sftp', 'sql']
 export const useWorkspaceStore = defineStore('workspace', () => {
   const tabs = ref<WorkspaceTab[]>([{ ...welcomeTab }])
   const activeId = ref('welcome')
-  const secondaryId = ref<string | null>(null)
+  const secondaryIds = ref<string[]>([])
+  const viewCount = ref<WorkspaceViewCount>(1)
+  const secondaryId = computed(() => secondaryIds.value[0] || null)
   const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeId.value) || tabs.value[0])
+  const visibleIds = computed(() => [activeId.value, ...secondaryIds.value])
   let nextTabId = 0
 
-  watch([tabs, activeId, secondaryId], persist, { deep: true })
+  watch([tabs, activeId, secondaryIds, viewCount], persist, { deep: true })
 
   function openConnection(connectionId: string, title: string, type: 'terminal' | 'sftp' | 'sql'): void {
     const id = `connection:${connectionId}:${++nextTabId}`
@@ -33,8 +37,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function activate(id: string): void {
     if (!tabs.value.some((tab) => tab.id === id)) return
-    if (secondaryId.value === id) secondaryId.value = null
+    const secondaryIndex = secondaryIds.value.indexOf(id)
+    if (secondaryIndex >= 0) {
+      const previousActive = activeId.value
+      if (tabs.value.some((tab) => tab.id === previousActive && tab.closable)) secondaryIds.value.splice(secondaryIndex, 1, previousActive)
+      else secondaryIds.value.splice(secondaryIndex, 1)
+    }
     activeId.value = id
+    normalizeViewCount()
   }
 
   function close(id: string, force = false): void {
@@ -42,8 +52,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const tab = tabs.value[index]
     if (!tab?.closable || (tab.pinned && !force)) return
     tabs.value.splice(index, 1)
-    if (secondaryId.value === id) secondaryId.value = null
+    secondaryIds.value = secondaryIds.value.filter((item) => item !== id)
     if (activeId.value === id) activeId.value = tabs.value[Math.max(0, index - 1)]?.id || 'welcome'
+    normalizeViewCount()
   }
 
   function togglePinned(id = activeId.value): void {
@@ -68,16 +79,44 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function openSplit(id = activeId.value): void {
     const index = tabs.value.findIndex((tab) => tab.id === id && tab.closable)
     if (index < 0) return
-    secondaryId.value = id
+    secondaryIds.value = [id]
+    viewCount.value = 2
     if (activeId.value === id) activeId.value = tabs.value.slice(0, index).reverse().find((tab) => tab.id !== id)?.id || 'welcome'
   }
 
   function closeSplit(): void {
-    secondaryId.value = null
+    setViewCount(1)
+  }
+
+  function setViewCount(count: WorkspaceViewCount): void {
+    if (count === 1) {
+      secondaryIds.value = []
+      viewCount.value = 1
+      return
+    }
+    const connectionTabs = tabs.value.filter((tab) => tab.closable)
+    if (!activeTab.value?.closable || connectionTabs.length < count) return
+    const maximum = count - 1
+    const next = secondaryIds.value.filter((id) => id !== activeId.value && connectionTabs.some((tab) => tab.id === id))
+    for (const tab of [...connectionTabs].reverse()) {
+      if (next.length >= maximum) break
+      if (tab.id !== activeId.value && !next.includes(tab.id)) next.push(tab.id)
+    }
+    secondaryIds.value = next.slice(0, maximum)
+    viewCount.value = count
+  }
+
+  function closePane(id: string): void {
+    secondaryIds.value = secondaryIds.value.filter((item) => item !== id)
+    normalizeViewCount()
   }
 
   function isVisible(id: string): boolean {
-    return activeId.value === id || secondaryId.value === id
+    return visibleIds.value.includes(id)
+  }
+
+  function canUseViewCount(count: WorkspaceViewCount): boolean {
+    return count === 1 || Boolean(activeTab.value?.closable && tabs.value.filter((tab) => tab.closable).length >= count)
   }
 
   function cycle(direction: 1 | -1): void {
@@ -108,19 +147,35 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const unique = restored.filter((tab, index) => restored.findIndex((item) => item.id === tab.id) === index)
       tabs.value = [{ ...welcomeTab }, ...unique]
       activeId.value = typeof state.activeId === 'string' && tabs.value.some((tab) => tab.id === state.activeId) ? state.activeId : 'welcome'
-      secondaryId.value = typeof state.secondaryId === 'string' && state.secondaryId !== activeId.value && tabs.value.some((tab) => tab.id === state.secondaryId) ? state.secondaryId : null
+      const restoredSecondaryIds = Array.isArray(state.secondaryIds) ? state.secondaryIds : typeof state.secondaryId === 'string' ? [state.secondaryId] : []
+      secondaryIds.value = restoredSecondaryIds.filter((id): id is string => typeof id === 'string' && id !== activeId.value && tabs.value.some((tab) => tab.id === id))
+      viewCount.value = state.viewCount === 4 ? 4 : secondaryIds.value.length ? 2 : 1
+      secondaryIds.value = secondaryIds.value.slice(0, viewCount.value - 1)
+      normalizeViewCount()
       nextTabId = Math.max(0, ...unique.map((tab) => Number(tab.id.match(/:(\d+)$/)?.[1] || 0)))
     } catch {
       tabs.value = [{ ...welcomeTab }]
       activeId.value = 'welcome'
-      secondaryId.value = null
+      secondaryIds.value = []
+      viewCount.value = 1
     }
   }
 
   function persist(): void {
     if (typeof localStorage === 'undefined') return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ tabs: tabs.value.filter((tab) => tab.closable), activeId: activeId.value, secondaryId: secondaryId.value }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      tabs: tabs.value.filter((tab) => tab.closable),
+      activeId: activeId.value,
+      secondaryId: secondaryId.value,
+      secondaryIds: secondaryIds.value,
+      viewCount: viewCount.value
+    }))
   }
 
-  return { tabs, activeId, secondaryId, activeTab, openConnection, activate, close, togglePinned, closeOthers, closeRight, closeAll, openSplit, closeSplit, isVisible, cycle, removeConnection, restore }
+  function normalizeViewCount(): void {
+    secondaryIds.value = secondaryIds.value.filter((id, index) => id !== activeId.value && secondaryIds.value.indexOf(id) === index && tabs.value.some((tab) => tab.id === id)).slice(0, 3)
+    viewCount.value = secondaryIds.value.length >= 2 ? 4 : secondaryIds.value.length === 1 ? 2 : 1
+  }
+
+  return { tabs, activeId, secondaryId, secondaryIds, viewCount, activeTab, visibleIds, openConnection, activate, close, togglePinned, closeOthers, closeRight, closeAll, openSplit, closeSplit, setViewCount, closePane, isVisible, canUseViewCount, cycle, removeConnection, restore }
 })

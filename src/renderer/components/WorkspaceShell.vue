@@ -42,7 +42,7 @@ function handleShortcut(event: KeyboardEvent): void {
   else if (event.key === 'Tab') workspace.cycle(event.shiftKey ? -1 : 1)
   else if (key === 'w') event.shiftKey ? workspace.closeAll() : workspace.close(workspace.activeId)
   else if (key === 't') openActiveAgain()
-  else if (event.key === '\\') workspace.openSplit()
+  else if (event.key === '\\') workspace.setViewCount(workspace.viewCount === 1 ? 2 : 1)
   else return
   event.preventDefault()
 }
@@ -58,9 +58,12 @@ function handleShortcut(event: KeyboardEvent): void {
         <button class="new-tab" :title="`${t('newTab')} (${shortcutModifier} T)`" :disabled="!workspace.activeTab?.connectionId" @click="openActiveAgain">＋</button>
       </div>
       <div class="tab-tools">
+        <div class="view-switch" :aria-label="t('multiView')">
+          <button :class="{ active: workspace.viewCount === 1 }" :title="t('singleView')" @click="workspace.setViewCount(1)">▣</button>
+          <button :class="{ active: workspace.viewCount === 2 }" :title="t('doubleView')" :disabled="!workspace.canUseViewCount(2)" @click="workspace.setViewCount(2)">▥</button>
+          <button :class="{ active: workspace.viewCount === 4 }" :title="t('quadView')" :disabled="!workspace.canUseViewCount(4)" @click="workspace.setViewCount(4)">▦</button>
+        </div>
         <button :title="workspace.activeTab?.pinned ? t('unpinTab') : t('pinTab')" :disabled="!workspace.activeTab?.closable" @click="workspace.togglePinned()">{{ workspace.activeTab?.pinned ? '◆' : '◇' }}</button>
-        <button :title="`${t('splitView')} (${shortcutModifier} \\)`" :disabled="!workspace.activeTab?.closable" @click="workspace.openSplit()">◫</button>
-        <button v-if="workspace.secondaryId" :title="t('closeSplit')" @click="workspace.closeSplit">▣</button>
         <details class="tab-menu">
           <summary :aria-label="t('tabActions')">•••</summary>
           <div class="tab-menu-popover">
@@ -71,7 +74,7 @@ function handleShortcut(event: KeyboardEvent): void {
         </details>
       </div>
     </div>
-    <div class="workspace-content" :class="{ split: workspace.secondaryId }">
+    <div class="workspace-content" :class="`layout-${workspace.viewCount}`">
       <div v-show="workspace.activeId === 'welcome'" class="welcome-view workspace-pane-slot primary">
         <div class="welcome-glyph">RH</div>
         <h1>RemoteHub</h1>
@@ -85,8 +88,8 @@ function handleShortcut(event: KeyboardEvent): void {
         <div class="phase-note"><span class="status-dot"></span><span>{{ t('phaseReady') }}</span></div>
       </div>
       <template v-for="tab in workspace.tabs" :key="tab.id">
-        <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ primary: workspace.activeId === tab.id, secondary: workspace.secondaryId === tab.id }">
-          <div v-if="workspace.secondaryId === tab.id" class="split-pane-heading"><span>{{ tab.title }}</span><button :aria-label="t('closeSplit')" @click="workspace.closeSplit">×</button></div>
+        <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ primary: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id) }">
+          <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span>{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)">×</button></div>
           <div class="workspace-pane-body">
             <TerminalPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />
             <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />

@@ -22,15 +22,21 @@ const phase6Messages = {
   }
 } as const
 
-type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en
+const multiViewMessages = {
+  'zh-CN': { multiView: '窗口多视图', singleView: '单视图', doubleView: '双视图', quadView: '四视图', primaryView: '主视图', closeView: '关闭此视图' },
+  en: { multiView: 'Window multi-view', singleView: 'Single view', doubleView: 'Dual view', quadView: 'Quad view', primaryView: 'Primary', closeView: 'Close this view' }
+} as const
+
+type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en
 
 const stored = localStorage.getItem('remotehub.locale')
 export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
 
 export function t(key: MessageKey, values: Record<string, string | number> = {}): string {
   const overrides = phase6Messages[locale.value] as Record<string, string>
+  const multiView = multiViewMessages[locale.value] as Record<string, string>
   const defaults = messages[locale.value] as Record<string, string>
-  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), overrides[key] || defaults[key] || key)
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), multiView[key] || overrides[key] || defaults[key] || key)
 }
 
 export function toggleLocale(): void {

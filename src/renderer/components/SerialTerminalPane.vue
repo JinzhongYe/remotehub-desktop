@@ -18,6 +18,7 @@ let removeDataListener: (() => void) | undefined
 let removeStatusListener: (() => void) | undefined
 let removeResizeListener: (() => void) | undefined
 let removeInputListener: (() => void) | undefined
+let resizeObserver: ResizeObserver | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SerialStatusEvent>()
 
@@ -85,6 +86,8 @@ onMounted(() => {
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
+  resizeObserver = new ResizeObserver(() => { if (props.active) fit() })
+  resizeObserver.observe(terminalHost.value)
   removeDataListener = window.api.serial.onData(handleData)
   removeStatusListener = window.api.serial.onStatus(handleStatus)
   const input = terminal.onData((data) => {
@@ -109,6 +112,7 @@ onBeforeUnmount(() => {
   removeStatusListener?.()
   removeResizeListener?.()
   removeInputListener?.()
+  resizeObserver?.disconnect()
   if (sessionId) void window.api.serial.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
 })

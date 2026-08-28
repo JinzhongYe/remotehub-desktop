@@ -2,7 +2,7 @@
 
 ## 目标
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 9 交付连接管理、系统凭据引用、Host Key 固定、独立 SSH/SFTP/串口工作区、受控 SFTP 传输队列、MySQL/PostgreSQL/SQLite 工作区，以及可恢复、可固定和可分屏的 Workspace Tab；所有设备、文件与远程连接仍在 Main 进程实现。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围绕“一个连接、一个工作区、多个工具”组织 SSH、SFTP、串口和数据库能力。当前 Phase 9 交付连接管理、系统凭据引用、Host Key 固定、独立 SSH/SFTP/串口工作区、受控 SFTP 传输队列、MySQL/PostgreSQL/SQLite 工作区，以及可恢复、可固定并支持单/双/四视图的 Workspace Tab；所有设备、文件与远程连接仍在 Main 进程实现。
 
 ## Electron 分层
 

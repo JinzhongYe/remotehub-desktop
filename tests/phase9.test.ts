@@ -28,4 +28,30 @@ describe('Phase 9 workspace', () => {
     expect(workspace.tabs.map((tab) => tab.id)).toEqual(['welcome', 'connection:ssh-1:7'])
     expect(workspace.secondaryId).toBeNull()
   })
+
+  it('switches between single, dual, and quad workspace views', () => {
+    setActivePinia(createPinia())
+    const workspace = useWorkspaceStore()
+    workspace.openConnection('ssh-1', 'Server 1', 'terminal')
+    workspace.openConnection('ssh-2', 'Server 2', 'terminal')
+    workspace.openConnection('ssh-3', 'Server 3', 'terminal')
+    workspace.openConnection('ssh-4', 'Server 4', 'terminal')
+
+    workspace.setViewCount(4)
+    expect(workspace.viewCount).toBe(4)
+    expect(workspace.visibleIds).toHaveLength(4)
+    expect(new Set(workspace.visibleIds).size).toBe(4)
+
+    const secondary = workspace.secondaryIds[0]
+    const previousPrimary = workspace.activeId
+    workspace.activate(secondary)
+    expect(workspace.activeId).toBe(secondary)
+    expect(workspace.secondaryIds).toContain(previousPrimary)
+
+    workspace.setViewCount(2)
+    expect(workspace.viewCount).toBe(2)
+    expect(workspace.visibleIds).toHaveLength(2)
+    workspace.setViewCount(1)
+    expect(workspace.secondaryIds).toEqual([])
+  })
 })

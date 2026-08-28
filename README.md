@@ -1,6 +1,6 @@
 # RemoteHub Desktop
 
-RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本完成 Phase 9：可以管理连接，通过 SSH 打开多个终端和带传输队列的 SFTP 文件工作区，连接本机串口设备，并直接使用 MySQL、PostgreSQL 与本地 SQLite 数据库；Workspace 支持标签恢复、固定、批量关闭、双栏分屏和快捷键。
+RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台。当前版本完成 Phase 9：可以管理连接，通过 SSH 打开多个终端和带传输队列的 SFTP 文件工作区，连接本机串口设备，并直接使用 MySQL、PostgreSQL 与本地 SQLite 数据库；Workspace 支持标签恢复、固定、批量关闭、单/双/四视图和快捷键。
 
 ## 当前交付
 
