@@ -1,8 +1,13 @@
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseTable } from '../../../shared/database'
 import type { Connection } from '../../../shared/types'
 
+export interface DatabaseTunnel {
+  connection: Connection
+  credential?: string
+}
+
 export interface DatabaseAdapter {
-  readonly type: 'mysql'
+  readonly type: 'mysql' | 'postgres' | 'sqlite'
   readonly database?: string
   readonly serverVersion: string
   ping(): Promise<void>
@@ -15,5 +20,5 @@ export interface DatabaseAdapter {
 }
 
 export interface DatabaseAdapterFactory {
-  connect(connection: Connection, password?: string): Promise<DatabaseAdapter>
+  connect(connection: Connection, password?: string, tunnel?: DatabaseTunnel): Promise<DatabaseAdapter>
 }
