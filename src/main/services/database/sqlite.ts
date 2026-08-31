@@ -71,7 +71,8 @@ export class SqliteAdapter implements DatabaseAdapter {
         columnType: row.type || 'ANY',
         nullable: !row.notnull,
         key: row.pk ? 'PRI' : undefined,
-        defaultValue: serializeDatabaseValue(row.dflt_value)
+        defaultValue: serializeDatabaseValue(row.dflt_value),
+        length: Number(row.type.match(/\((\d+)/)?.[1]) || undefined
       }))
     } catch (error) { throw mapSqliteError(error) }
   }

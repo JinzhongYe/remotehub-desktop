@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import type { Connection, ConnectionInput, Group } from '../../shared/types'
 import type { SerialPortInfo } from '../../shared/serial'
+import { localShellName } from '../../shared/local-shell'
 import { privateKeyFileName } from '../../shared/private-key'
 import { t } from '../i18n'
 
-const props = defineProps<{ open: boolean; connection?: Connection | null; groups: Group[]; connections: Connection[] }>()
+const props = defineProps<{ open: boolean; connection?: Connection | null; groups: Group[]; connections: Connection[]; platform?: string }>()
 const emit = defineEmits<{ close: []; save: [value: ConnectionInput, credential?: string, clearCredential?: boolean, privateKeyPath?: string] }>()
+const shellTypeName = computed(() => localShellName(props.platform || ''))
 
 const form = reactive<ConnectionInput>({ name: '', type: 'ssh', host: '', port: 22, username: '', authType: 'privateKey', databaseType: 'mysql', database: '', databaseSslMode: 'disable', favorite: false })
 const credential = ref('')
@@ -129,7 +131,7 @@ async function chooseShellDirectory(): Promise<void> {
       </div>
       <div class="dialog-grid">
         <label class="field wide"><span>{{ t('name') }}</span><input v-model="form.name" required placeholder="dev-server / MES PG"></label>
-        <label class="field"><span>{{ t('type') }}</span><select v-model="form.type" @change="changeType"><option value="ssh">SSH Server</option><option value="database">Database</option><option value="serial">Serial / 串口</option><option value="shell">{{ t('localShell') }}</option></select></label>
+        <label class="field"><span>{{ t('type') }}</span><select v-model="form.type" @change="changeType"><option value="ssh">SSH Server</option><option value="database">Database</option><option value="serial">Serial / 串口</option><option value="shell">{{ shellTypeName }}</option></select></label>
         <label v-if="form.type !== 'shell' && (form.databaseType !== 'sqlite' || form.type !== 'database')" class="field"><span>{{ form.type === 'serial' ? t('baudRate') : t('port') }}</span><input v-model.number="form.port" type="number" min="1" :max="form.type === 'serial' ? 4000000 : 65535" required></label>
         <label class="field wide"><span>{{ form.type === 'shell' ? t('workingDirectory') : form.type === 'serial' ? t('serialPath') : form.type === 'database' && form.databaseType === 'sqlite' ? t('databaseFile') : t('host') }}</span><span v-if="form.type === 'shell'" class="input-with-action"><input v-model="form.host" required placeholder="C:\Projects / /home/user/Projects"><button type="button" class="button secondary" @click="chooseShellDirectory">{{ t('chooseFolder') }}</button></span><span v-else-if="form.type === 'serial'" class="input-with-action"><input v-model="form.host" required list="serial-port-list" placeholder="COM3 / /dev/ttyUSB0"><button type="button" class="button secondary" @click="loadSerialPorts">{{ t('refresh') }}</button></span><span v-else-if="form.type === 'database' && form.databaseType === 'sqlite'" class="input-with-action"><input v-model="form.host" required placeholder="/data/app.db"><button type="button" class="button secondary" @click="chooseDatabaseFile">{{ t('chooseFile') }}</button></span><input v-else v-model="form.host" required placeholder="192.168.1.100 / db.example.com"><datalist id="serial-port-list"><option v-for="item in serialPorts" :key="item.path" :value="item.path">{{ item.manufacturer }}</option></datalist><small v-if="form.type === 'serial' && serialPortsError" class="field-error">{{ serialPortsError }}</small></label>
         <template v-if="form.type !== 'serial' && form.type !== 'shell'">

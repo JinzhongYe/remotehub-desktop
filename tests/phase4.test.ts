@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { isPrivateKeyText, privateKeyFileName } from '../src/shared/private-key'
 import { isValidBaudRate } from '../src/shared/serial'
 import { fileIcon, joinRemotePath, normalizeRemotePath, parentRemotePath } from '../src/shared/sftp'
-import { localShellCommand } from '../src/shared/local-shell'
+import { localShellCommand, localShellName } from '../src/shared/local-shell'
 import { parseServerStatus } from '../src/shared/ssh'
 import { parseCodexStatus } from '../src/shared/codex'
 import { useWorkspaceStore } from '../src/renderer/stores/workspace'
@@ -42,6 +42,9 @@ describe('Phase 4 SFTP, serial, and private key files', () => {
   it('starts the operating system shell without another dependency', () => {
     expect(localShellCommand('win32', {})).toEqual({ command: 'powershell.exe', args: ['-NoLogo'] })
     expect(localShellCommand('linux', { SHELL: '/bin/bash' })).toEqual({ command: '/bin/bash', args: ['-i'] })
+    expect(localShellName('darwin')).toBe('Zsh')
+    expect(localShellName('win32')).toBe('PowerShell')
+    expect(localShellName('linux')).toBe('Bash')
   })
 
   it('parses the SSH server overview response', () => {
