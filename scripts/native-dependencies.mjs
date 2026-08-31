@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { chmodSync, existsSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { rebuild } from '@electron/rebuild'
@@ -8,6 +8,20 @@ export function hasPtyPrebuild(moduleDirectory, platform, arch) {
     ? ['conpty.node', 'conpty_console_list.node', 'pty.node', 'winpty.dll', 'winpty-agent.exe', 'conpty/conpty.dll', 'conpty/OpenConsole.exe']
     : platform === 'darwin' ? ['pty.node', 'spawn-helper'] : []
   return files.length > 0 && files.every(file => existsSync(join(moduleDirectory, 'prebuilds', `${platform}-${arch}`, file)))
+}
+
+export function ensurePtyHelpersExecutable(moduleDirectory, platform, arch, io = { existsSync, statSync, chmodSync }) {
+  if (platform !== 'darwin') return
+  // node-pty 1.1.0's npm tarball ships its macOS spawn-helper with mode 0644.
+  // Fix only package-owned helpers at build time, before asar/signing/DMG creation.
+  // https://github.com/microsoft/node-pty/issues/850
+  for (const directory of ['build/Release', 'build/Debug', `prebuilds/darwin-${arch}`]) {
+    const helper = join(moduleDirectory, directory, 'spawn-helper')
+    if (!io.existsSync(helper)) continue
+    const info = io.statSync(helper)
+    if (!info.isFile()) throw new Error(`PTY helper is not a regular file: ${helper}`)
+    if ((info.mode & 0o111) !== 0o111) io.chmodSync(helper, 0o755)
+  }
 }
 
 export async function rebuildNativeDependencies({ appDir, electronVersion, platform = process.platform, arch = process.arch }) {
@@ -28,4 +42,5 @@ export async function rebuildNativeDependencies({ appDir, electronVersion, platf
     mode: 'sequential',
     ignoreModules: usePtyPrebuild ? ['node-pty'] : []
   })
+  ensurePtyHelpersExecutable(ptyDirectory, targetPlatform, arch)
 }
