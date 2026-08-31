@@ -3,6 +3,15 @@ import { defineStore } from 'pinia'
 
 export type WorkspaceTabType = 'welcome' | 'terminal' | 'sftp' | 'sql' | 'table'
 export type WorkspaceViewCount = 1 | 2 | 4
+export type SftpPosition = 'right' | 'left' | 'top' | 'bottom'
+
+export function normalizeSftpPosition(value: string | null): SftpPosition {
+  return value === 'right' || value === 'left' || value === 'top' ? value : 'bottom'
+}
+
+export function clampSplitRatio(value: number): number {
+  return Math.min(80, Math.max(20, value))
+}
 
 export interface WorkspaceTab {
   id: string

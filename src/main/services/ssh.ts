@@ -1,10 +1,12 @@
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
+import type { CodexStatus } from '../../shared/codex'
 import type { Connection } from '../../shared/types'
-import { sshErrorCode, type SshConnectResult, type SshDataEvent, type SshStatusEvent } from '../../shared/ssh'
+import { parseServerStatus, sshErrorCode, type ServerStatus, type SshConnectResult, type SshDataEvent, type SshStatusEvent } from '../../shared/ssh'
 import { CredentialService } from './credentials'
 import { fingerprintHostKey, hostKeyState } from './host-key'
 import { appError, StorageService } from './storage'
+import { queryCodexUsage } from './codex'
 
 type EventSink = (channel: 'ssh:data' | 'ssh:status', payload: SshDataEvent | SshStatusEvent) => void
 
@@ -19,6 +21,14 @@ type SshClientLike = {
   on(event: string, listener: (...args: unknown[]) => void): SshClientLike
   connect(config: Record<string, unknown>): void
   shell(options: Record<string, unknown>, callback: (error: Error | undefined, stream: SshStreamLike) => void): void
+  exec(command: string, callback: (error: Error | undefined, stream: SshExecStreamLike) => void): void
+  end(): void
+}
+
+type SshExecStreamLike = {
+  stderr: { on(event: string, listener: (...args: unknown[]) => void): void }
+  on(event: string, listener: (...args: unknown[]) => void): SshExecStreamLike
+  write(data: string): boolean
   end(): void
 }
 
@@ -30,6 +40,29 @@ type SshSession = {
   client: SshClientLike
   stream?: SshStreamLike
 }
+
+const SERVER_STATUS_COMMAND = String.raw`
+export LC_ALL=C
+printf 'user\t%s\n' "$(id -un 2>/dev/null)"
+printf 'host\t%s\n' "$(hostname -f 2>/dev/null || hostname 2>/dev/null)"
+if [ -r /etc/os-release ]; then . /etc/os-release; printf 'os\t%s\n' "$PRETTY_NAME"; else printf 'os\t%s\n' "$(uname -s 2>/dev/null)"; fi
+printf 'kernel\t%s\n' "$(uname -sr 2>/dev/null)"
+awk 'NR==1 {printf "uptime_seconds\t%.0f\n", $1}' /proc/uptime 2>/dev/null
+printf 'cpu_cores\t%s\n' "$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf 0)"
+printf 'load_average\t%s\n' "$(cut -d ' ' -f 1-3 /proc/loadavg 2>/dev/null)"
+if [ -r /proc/stat ]; then
+  read _ u1 n1 s1 i1 w1 q1 z1 t1 _ < /proc/stat
+  total1=$((u1+n1+s1+i1+w1+q1+z1+t1)); idle1=$((i1+w1)); sleep 0.2
+  read _ u2 n2 s2 i2 w2 q2 z2 t2 _ < /proc/stat
+  total2=$((u2+n2+s2+i2+w2+q2+z2+t2)); idle2=$((i2+w2))
+  awk -v ticks="$((total2-total1))" -v idle_ticks="$((idle2-idle1))" 'BEGIN {value=0; if (ticks>0) value=(ticks-idle_ticks)*100/ticks; printf "cpu_percent\t%.1f\n", value}'
+fi
+awk '/^MemTotal:/ {mt=$2} /^MemAvailable:/ {ma=$2} /^SwapTotal:/ {st=$2} /^SwapFree:/ {sf=$2} END {printf "memory_total_kb\t%.0f\nmemory_used_kb\t%.0f\nswap_total_kb\t%.0f\nswap_used_kb\t%.0f\n", mt, mt-ma, st, st-sf}' /proc/meminfo 2>/dev/null
+df -Pk / 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); printf "disk_total_kb\t%s\ndisk_used_kb\t%s\ndisk_percent\t%s\n", $2, $3, $5}'
+awk -F: 'NR>2 {gsub(/ /, "", $1); if ($1 != "lo") {gsub(/^ +/, "", $2); split($2, v, / +/); rx+=v[1]; tx+=v[9]}} END {printf "network_rx_bytes\t%.0f\nnetwork_tx_bytes\t%.0f\n", rx, tx}' /proc/net/dev 2>/dev/null
+printf 'process_count\t%s\n' "$(ps -e --no-headers 2>/dev/null | wc -l)"
+ps -eo pid=,pcpu=,rss=,comm= --sort=-pcpu 2>/dev/null | head -n 6 | awk '{printf "process\t%s|%s|%s|%s\n", $1, $2, $3, $4}'
+`.trim()
 
 const loadNativeModule = createRequire(__filename)
 
@@ -141,6 +174,36 @@ export class SshService {
     session.stream.setWindow(rows, cols, 0, 0)
   }
 
+  async status(sessionId: string): Promise<ServerStatus> {
+    try {
+      const result = await this.runCommand(sessionId, SERVER_STATUS_COMMAND)
+      if (result.code && !result.output) throw new Error(result.errorOutput.trim() || 'Could not read server status')
+      return parseServerStatus(result.output)
+    } catch (error) {
+      throw appError('SSH_STATUS_FAILED', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async codexStatus(sessionId: string): Promise<CodexStatus> {
+    if (typeof sessionId !== 'string' || sessionId.length > 100) throw appError('SSH_SESSION_INVALID', 'SSH session identifier is invalid')
+    const session = this.sessions.get(sessionId)
+    if (!session?.stream) throw appError('SSH_SESSION_NOT_FOUND', 'SSH session is not available')
+    try {
+      return await queryCodexUsage((ready, fail) => session.client.exec('codex app-server', (error, stream) => {
+        if (error) return fail(error)
+        ready({
+          onData: (listener) => { stream.on('data', listener) },
+          onError: (listener) => { stream.on('error', listener) },
+          onClose: (listener) => { stream.on('close', listener) },
+          write: (data) => { stream.write(data) },
+          close: () => stream.end()
+        })
+      }))
+    } catch (error) {
+      throw appError('SSH_CODEX_STATUS_FAILED', error instanceof Error ? error.message : String(error))
+    }
+  }
+
   disconnect(sessionId: string): void {
     if (typeof sessionId !== 'string' || sessionId.length > 100) throw appError('SSH_SESSION_INVALID', 'SSH session identifier is invalid')
     this.closeSession(sessionId, true)
@@ -159,6 +222,32 @@ export class SshService {
     } catch {
       throw appError('SSH_UNAVAILABLE', 'SSH module is unavailable; run npm install and restart')
     }
+  }
+
+  private runCommand(sessionId: string, command: string): Promise<{ output: string; errorOutput: string; code: number }> {
+    if (typeof sessionId !== 'string' || sessionId.length > 100) throw appError('SSH_SESSION_INVALID', 'SSH session identifier is invalid')
+    const session = this.sessions.get(sessionId)
+    if (!session?.stream) throw appError('SSH_SESSION_NOT_FOUND', 'SSH session is not available')
+    return new Promise((resolve, reject) => {
+      let output = ''
+      let errorOutput = ''
+      let settled = false
+      const finish = (error?: Error, code = 0): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        if (error) reject(error)
+        else resolve({ output, errorOutput, code })
+      }
+      const timeout = setTimeout(() => finish(new Error('Remote command timed out')), 6000)
+      session.client.exec(command, (error, stream) => {
+        if (error) return finish(error)
+        stream.on('data', (chunk: unknown) => { if (output.length < 64 * 1024) output += bufferText(chunk) })
+        stream.stderr.on('data', (chunk: unknown) => { if (errorOutput.length < 4096) errorOutput += bufferText(chunk) })
+        stream.on('error', (streamError: unknown) => finish(streamError instanceof Error ? streamError : new Error(String(streamError))))
+        stream.on('close', (code: unknown) => finish(undefined, typeof code === 'number' ? code : 0))
+      })
+    })
   }
 
   private closeSession(sessionId: string, notify: boolean): void {
@@ -186,4 +275,8 @@ function toSshError(error: unknown): Error & { code: string } {
     ? 'Authentication failed. Check the saved username and password or private key.'
     : error instanceof Error ? error.message : 'SSH connection failed'
   return appError(code, message)
+}
+
+function bufferText(value: unknown): string {
+  return Buffer.isBuffer(value) ? value.toString('utf8') : String(value)
 }

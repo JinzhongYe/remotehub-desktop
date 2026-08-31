@@ -37,6 +37,7 @@
     "better-sqlite3": "^11.8.1",
     "codemirror": "^6.0.1",
     "mysql2": "^3.24.2",
+    "node-pty": "^1.1.0",
     "pg": "^8.23.0",
     "pinia": "^2.3.0",
     "serialport": "^13.0.0",

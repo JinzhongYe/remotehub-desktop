@@ -2,11 +2,29 @@ import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-// Run the JS entry point directly: spawning npm.cmd without a shell fails on
-// recent Windows Node releases. Builder also rebuilds all production addons.
-const result = spawnSync(process.execPath, [require.resolve('electron-builder/out/cli/cli.js'), 'install-app-deps'], {
-  stdio: 'inherit'
-})
+const electronVersion = require('electron/package.json').version
 
-if (result.error) throw result.error
-if (result.status) process.exit(result.status)
+const isWindows = process.platform === 'win32'
+
+const result = spawnSync(
+  'npm',
+  ['rebuild', 'better-sqlite3', 'node-pty'],
+  {
+    stdio: 'inherit',
+    shell: isWindows,
+    env: {
+      ...process.env,
+      npm_config_runtime: 'electron',
+      npm_config_target: electronVersion,
+      npm_config_disturl: 'https://electronjs.org/headers'
+    }
+  }
+)
+
+if (result.error) {
+  throw result.error
+}
+
+if (result.status !== 0) {
+  process.exit(result.status ?? 1)
+}

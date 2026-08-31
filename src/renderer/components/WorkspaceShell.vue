@@ -1,21 +1,42 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, onUnmounted } from 'vue'
+import { defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import type { Connection } from '../../shared/types'
 import { useConnectionStore } from '../stores/connection'
-import { useWorkspaceStore } from '../stores/workspace'
+import { clampSplitRatio, normalizeSftpPosition, useWorkspaceStore, type SftpPosition, type WorkspaceViewCount } from '../stores/workspace'
 import TerminalPane from './TerminalPane.vue'
 import SerialTerminalPane from './SerialTerminalPane.vue'
 import SftpPane from './SftpPane.vue'
+import SplitPane from './SplitPane.vue'
 import { t } from '../i18n'
+import ConnectionIcon from './ConnectionIcon.vue'
+import appIcon from '../../../assets/remotehub.png'
 
 const DatabasePane = defineAsyncComponent(() => import('./DatabasePane.vue'))
 
 const props = defineProps<{ shortcutModifier: string }>()
 const workspace = useWorkspaceStore()
 const connections = useConnectionStore()
+const sftpPosition = ref<SftpPosition>(normalizeSftpPosition(localStorage.getItem('remotehub.sftpPosition')))
+const sftpOpen = ref(localStorage.getItem('remotehub.sftpOpen') !== 'false')
+const workspaceContent = ref<HTMLElement | null>(null)
+const workspaceSplitX = ref(50)
+const workspaceSplitY = ref(50)
+let workspaceDrag: 'x' | 'y' | null = null
 
-onMounted(() => window.addEventListener('keydown', handleShortcut))
-onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
+onMounted(() => {
+  window.addEventListener('keydown', handleShortcut)
+  document.addEventListener('pointerdown', closeOpenMenus)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleShortcut)
+  document.removeEventListener('pointerdown', closeOpenMenus)
+})
+
+function closeOpenMenus(event: PointerEvent): void {
+  document.querySelectorAll<HTMLDetailsElement>('.tab-menu[open], .sftp-layout-menu[open]').forEach((menu) => {
+    if (!menu.contains(event.target as Node)) menu.open = false
+  })
+}
 
 function iconFor(type: string): string {
   return type === 'terminal' ? '›_' : type === 'sftp' ? '⇄' : type === 'sql' ? 'SQL' : '□'
@@ -23,6 +44,12 @@ function iconFor(type: string): string {
 
 function connectionFor(connectionId?: string): Connection | null {
   return connections.connections.find((connection) => connection.id === connectionId) || null
+}
+
+function openConnection(connection: Connection): void {
+  connections.select(connection.id)
+  connections.markRecent(connection.id)
+  workspace.openConnection(connection.id, connection.name, connection.type === 'database' ? 'sql' : 'terminal')
 }
 
 function openActiveAgain(): void {
@@ -42,8 +69,51 @@ function handleShortcut(event: KeyboardEvent): void {
   else if (event.key === 'Tab') workspace.cycle(event.shiftKey ? -1 : 1)
   else if (key === 'w') event.shiftKey ? workspace.closeAll() : workspace.close(workspace.activeId)
   else if (key === 't') openActiveAgain()
-  else if (event.key === '\\') workspace.setViewCount(workspace.viewCount === 1 ? 2 : 1)
+  else if (event.key === '\\') setViewCount(workspace.viewCount === 1 ? 2 : 1)
   else return
+  event.preventDefault()
+}
+
+function setSftpPosition(position: SftpPosition): void {
+  sftpPosition.value = position
+  localStorage.setItem('remotehub.sftpPosition', position)
+}
+
+function toggleSftp(): void {
+  sftpOpen.value = !sftpOpen.value
+  localStorage.setItem('remotehub.sftpOpen', String(sftpOpen.value))
+}
+
+function setViewCount(count: WorkspaceViewCount): void {
+  workspaceSplitX.value = 50
+  workspaceSplitY.value = 50
+  workspace.setViewCount(count)
+}
+
+function startWorkspaceResize(axis: 'x' | 'y', event: PointerEvent): void {
+  workspaceDrag = axis
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function resizeWorkspace(event: PointerEvent): void {
+  if (!workspaceDrag || !workspaceContent.value) return
+  const bounds = workspaceContent.value.getBoundingClientRect()
+  const value = workspaceDrag === 'x' ? (event.clientX - bounds.left) / bounds.width : (event.clientY - bounds.top) / bounds.height
+  ;(workspaceDrag === 'x' ? workspaceSplitX : workspaceSplitY).value = clampSplitRatio(value * 100)
+}
+
+function stopWorkspaceResize(event: PointerEvent): void {
+  workspaceDrag = null
+  const target = event.currentTarget as HTMLElement
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+}
+
+function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): void {
+  const delta = axis === 'x'
+    ? event.key === 'ArrowLeft' ? -2 : event.key === 'ArrowRight' ? 2 : 0
+    : event.key === 'ArrowUp' ? -2 : event.key === 'ArrowDown' ? 2 : 0
+  if (!delta) return
+  ;(axis === 'x' ? workspaceSplitX : workspaceSplitY).value = clampSplitRatio((axis === 'x' ? workspaceSplitX : workspaceSplitY).value + delta)
   event.preventDefault()
 }
 </script>
@@ -59,9 +129,9 @@ function handleShortcut(event: KeyboardEvent): void {
       </div>
       <div class="tab-tools">
         <div class="view-switch" :aria-label="t('multiView')">
-          <button :class="{ active: workspace.viewCount === 1 }" :title="t('singleView')" @click="workspace.setViewCount(1)">▣</button>
-          <button :class="{ active: workspace.viewCount === 2 }" :title="t('doubleView')" :disabled="!workspace.canUseViewCount(2)" @click="workspace.setViewCount(2)">▥</button>
-          <button :class="{ active: workspace.viewCount === 4 }" :title="t('quadView')" :disabled="!workspace.canUseViewCount(4)" @click="workspace.setViewCount(4)">▦</button>
+          <button :class="{ active: workspace.viewCount === 1 }" :title="t('singleView')" @click="setViewCount(1)">▣</button>
+          <button :class="{ active: workspace.viewCount === 2 }" :title="t('doubleView')" :disabled="!workspace.canUseViewCount(2)" @click="setViewCount(2)">▥</button>
+          <button :class="{ active: workspace.viewCount === 4 }" :title="t('quadView')" :disabled="!workspace.canUseViewCount(4)" @click="setViewCount(4)">▦</button>
         </div>
         <button :title="workspace.activeTab?.pinned ? t('unpinTab') : t('pinTab')" :disabled="!workspace.activeTab?.closable" @click="workspace.togglePinned()">{{ workspace.activeTab?.pinned ? '◆' : '◇' }}</button>
         <details class="tab-menu">
@@ -74,24 +144,32 @@ function handleShortcut(event: KeyboardEvent): void {
         </details>
       </div>
     </div>
-    <div class="workspace-content" :class="`layout-${workspace.viewCount}`">
+    <div ref="workspaceContent" class="workspace-content" :class="`layout-${workspace.viewCount}`" :style="{ '--workspace-split-x': `${workspaceSplitX}%`, '--workspace-split-y': `${workspaceSplitY}%` }">
       <div v-show="workspace.activeId === 'welcome'" class="welcome-view workspace-pane-slot primary">
-        <div class="welcome-glyph">RH</div>
-        <h1>RemoteHub</h1>
-        <p>{{ t('tagline') }}</p>
-        <div class="shortcut-grid">
-          <div><kbd>{{ shortcutModifier }} K</kbd><span>{{ t('searchShortcut') }}</span></div>
-          <div><kbd>{{ shortcutModifier }} N</kbd><span>{{ t('addShortcut') }}</span></div>
-          <div><kbd>{{ shortcutModifier }} Tab</kbd><span>{{ t('switchTabsShortcut') }}</span></div>
-          <div><kbd>{{ shortcutModifier }} W</kbd><span>{{ t('closeTab') }}</span></div>
+        <div class="welcome-heading">
+          <img class="welcome-glyph" :src="appIcon" alt=""><div><h1>{{ t('workspace') }}</h1><p>{{ t('allConnections') }}</p></div>
         </div>
-        <div class="phase-note"><span class="status-dot"></span><span>{{ t('phaseReady') }}</span></div>
+        <div v-if="connections.connections.length" class="workspace-connections">
+          <button v-for="connection in connections.connections" :key="connection.id" class="workspace-connection-card" :title="t('doubleClick')" @dblclick="openConnection(connection)">
+            <ConnectionIcon :connection="connection" />
+            <span><strong>{{ connection.name }}</strong><small>{{ connection.type === 'shell' ? connection.host : connection.type === 'serial' ? `${connection.host} · ${connection.port} baud` : `${connection.host}:${connection.port}` }}</small></span>
+            <em>{{ connection.type === 'database' ? connection.databaseType : connection.type.toUpperCase() }}</em>
+          </button>
+        </div>
+        <div v-else class="workspace-empty">{{ t('emptyConnections') }}</div>
+        <div class="shortcut-grid">
+          <div><kbd>{{ shortcutModifier }} K</kbd><span>{{ t('searchShortcut') }}</span></div><div><kbd>{{ shortcutModifier }} N</kbd><span>{{ t('addShortcut') }}</span></div>
+        </div>
       </div>
       <template v-for="tab in workspace.tabs" :key="tab.id">
         <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ primary: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id) }">
           <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span>{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)">×</button></div>
           <div class="workspace-pane-body">
-            <TerminalPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />
+            <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="[`sftp-${sftpPosition}`, { 'second-collapsed': !sftpOpen }]" :direction="sftpPosition === 'left' || sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="sftpPosition === 'left' || sftpPosition === 'top'" :initial="60">
+              <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="sftpOpen" @toggle-sftp="toggleSftp" /></template>
+              <template #second><SftpPane v-show="sftpOpen" :connection-id="tab.connectionId" embedded :position="sftpPosition" @position="setSftpPosition" /></template>
+            </SplitPane>
+            <TerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'shell'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" local />
             <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />
             <SftpPane v-else-if="tab.type === 'sftp' && connectionFor(tab.connectionId)?.type === 'ssh'" :connection-id="tab.connectionId" />
             <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" />
@@ -110,6 +188,8 @@ function handleShortcut(event: KeyboardEvent): void {
           </div>
         </div>
       </template>
+      <div v-if="workspace.viewCount > 1" class="workspace-divider vertical" role="separator" tabindex="0" aria-orientation="vertical" :aria-valuemin="20" :aria-valuemax="80" :aria-valuenow="Math.round(workspaceSplitX)" @pointerdown.prevent="startWorkspaceResize('x', $event)" @pointermove="resizeWorkspace" @pointerup="stopWorkspaceResize" @pointercancel="stopWorkspaceResize" @keydown="resizeWorkspaceWithKeyboard('x', $event)"></div>
+      <div v-if="workspace.viewCount === 4" class="workspace-divider horizontal" role="separator" tabindex="0" aria-orientation="horizontal" :aria-valuemin="20" :aria-valuemax="80" :aria-valuenow="Math.round(workspaceSplitY)" @pointerdown.prevent="startWorkspaceResize('y', $event)" @pointermove="resizeWorkspace" @pointerup="stopWorkspaceResize" @pointercancel="stopWorkspaceResize" @keydown="resizeWorkspaceWithKeyboard('y', $event)"></div>
     </div>
   </section>
 </template>

@@ -1,4 +1,4 @@
-export type ConnectionType = 'ssh' | 'database' | 'serial'
+export type ConnectionType = 'ssh' | 'database' | 'serial' | 'shell'
 export type DatabaseType = 'mysql' | 'postgres' | 'sqlite'
 export type DatabaseSslMode = 'disable' | 'require' | 'verify-full'
 export type AuthType = 'password' | 'privateKey'
@@ -67,6 +67,11 @@ export interface ConnectionTestResult {
   message: string
   latencyMs: number
   testedAt: number
+}
+
+export interface ConnectionTestRequest {
+  connection: ConnectionInput
+  credential?: string
 }
 
 export interface AppInfo {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { basicSetup, EditorView } from 'codemirror'
+import { Compartment } from '@codemirror/state'
 import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -43,7 +44,13 @@ const tableLastSql = ref<Record<string, string>>({})
 const cellContextMenu = ref<{ x: number; y: number; row: DatabaseCell[]; rowIndex: number; columnIndex: number; value: DatabaseCell } | null>(null)
 const selectedCell = ref<{ row: DatabaseCell[]; rowNumber: number; columnIndex: number; columnName: string; columnType: string; value: DatabaseCell } | null>(null)
 let editor: EditorView | undefined
+const editorTheme = new Compartment()
+let themeObserver: MutationObserver | undefined
 let disposed = false
+
+function databaseEditorTheme() {
+  return document.documentElement.dataset.theme === 'light' ? [] : oneDark
+}
 
 function sectionsFor(source: DatabaseTable[]): { type: string; label: string; items: DatabaseTable[] }[] {
   const needle = schemaFilter.value.trim().toLocaleLowerCase()
@@ -358,14 +365,17 @@ onMounted(async () => {
   if (editorHost.value) editor = new EditorView({
     parent: editorHost.value,
     doc: isSqlite.value ? 'SELECT sqlite_version() AS version;' : 'SELECT VERSION() AS version;',
-    extensions: [basicSetup, sql({ dialect: isPostgres.value ? PostgreSQL : isSqlite.value ? SQLite : MySQL }), oneDark, EditorView.lineWrapping]
+    extensions: [basicSetup, sql({ dialect: isPostgres.value ? PostgreSQL : isSqlite.value ? SQLite : MySQL }), editorTheme.of(databaseEditorTheme()), EditorView.lineWrapping]
   })
+  themeObserver = new MutationObserver(() => editor?.dispatch({ effects: editorTheme.reconfigure(databaseEditorTheme()) }))
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   await connect()
 })
 
 onBeforeUnmount(() => {
   disposed = true
   document.removeEventListener('pointerdown', closeCellContextMenu)
+  themeObserver?.disconnect()
   editor?.destroy()
   if (sessionId.value) void window.api.database.disconnect(sessionId.value).catch(() => undefined)
 })
@@ -380,7 +390,7 @@ onBeforeUnmount(() => {
         <option v-if="!databases.length" value="">{{ t('noDatabase') }}</option>
         <option v-for="database in databases" :key="database.name" :value="database.name">{{ database.name }}{{ database.system ? ` · ${t('systemDatabase')}` : '' }}</option>
       </select>
-      <button class="toolbar-button muted" :disabled="!sessionId || loadingSchema" @click="refreshSchema">↻ {{ t('refresh') }}</button>
+      <button class="toolbar-button muted icon-only" :title="t('refresh')" :aria-label="t('refresh')" :disabled="!sessionId || loadingSchema" @click="refreshSchema">↻</button>
       <span class="database-server">{{ serverVersion }}</span>
       <span class="terminal-status" :class="{ connecting, error: errorMessage && !sessionId }"><span class="status-dot"></span>{{ connecting ? t('connecting') : sessionId ? t('connected') : t('closed') }}</span>
       <button v-if="!sessionId && !connecting" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button>
@@ -433,7 +443,7 @@ onBeforeUnmount(() => {
           <div v-for="table in openedTables" :key="tableKey(table)" class="database-table-tab" :class="{ active: workspaceMode === 'table' && activeTableName === tableKey(table) }"><button @click="activateTable(table)">▦ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeTable(table)">×</button></div>
         </nav>
         <section v-show="workspaceMode === 'sql'" class="sql-editor-section">
-          <div class="sql-section-toolbar"><span>{{ t('sqlEditor') }}</span><small>{{ t('runShortcut') }}</small><button class="toolbar-button" :disabled="!sessionId || running" @click="runEditorQuery">▶ {{ running ? t('runningQuery') : t('runQuery') }}</button></div>
+          <div class="sql-section-toolbar"><span>{{ t('sqlEditor') }}</span><small>{{ t('runShortcut') }}</small><button class="toolbar-button icon-only" :title="running ? t('runningQuery') : t('runQuery')" :aria-label="running ? t('runningQuery') : t('runQuery')" :disabled="!sessionId || running" @click="runEditorQuery">▶</button></div>
           <div ref="editorHost" class="sql-editor-host" @keydown="handleEditorKeydown"></div>
         </section>
         <section class="result-section" :class="{ 'table-mode': workspaceMode === 'table' }">
@@ -441,9 +451,9 @@ onBeforeUnmount(() => {
             <strong>{{ workspaceMode === 'table' && activeTable ? isPostgres ? `${activeTable.database}.${activeTable.name}` : activeTable.name : t('resultGrid') }}</strong>
             <small>{{ resultSummary }}</small>
             <label v-if="result?.kind === 'rows'" class="row-filter"><span>⌕</span><input v-model="rowFilter" :placeholder="t('filterRows')"></label>
-            <button class="toolbar-button muted" :disabled="!result || running" @click="refreshResult">↻ {{ t('refresh') }}</button>
-            <button v-if="workspaceMode === 'table'" class="toolbar-button muted" @click="openTableSql">⌁ {{ t('openInSql') }}</button>
-            <button v-if="result?.kind === 'rows'" class="toolbar-button" @click="exportResult">⇩ {{ t('exportPage') }}</button>
+            <button class="toolbar-button muted icon-only" :title="t('refresh')" :aria-label="t('refresh')" :disabled="!result || running" @click="refreshResult">↻</button>
+            <button v-if="workspaceMode === 'table'" class="toolbar-button muted icon-only" :title="t('openInSql')" :aria-label="t('openInSql')" @click="openTableSql">⌁</button>
+            <button v-if="result?.kind === 'rows'" class="toolbar-button icon-only" :title="t('exportPage')" :aria-label="t('exportPage')" @click="exportResult">⇩</button>
           </div>
           <div class="result-grid-wrap">
             <div v-if="!result" class="result-empty">{{ t('queryReady') }}</div>
