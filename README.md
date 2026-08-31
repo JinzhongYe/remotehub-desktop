@@ -32,7 +32,7 @@ npm install
 npm run dev
 ```
 
-需要 Node.js 20 或更高版本（Intel 与 Apple Silicon macOS 均可）。`npm install` 会自动为当前 Electron 版本重建 `better-sqlite3` 原生模块。
+源码启动/构建需要 Node.js 22.12 或更高版本（Intel 与 Apple Silicon macOS 均可）；下载安装包则不需要 Node.js。`npm install` 会自动为当前 Electron 版本重建 SQLite、串口等原生模块。
 
 `npm run dev` 会先构建应用，再启动本地预览服务和桌面窗口。关闭窗口即可结束本地开发进程。项目不要求预装 pnpm。
 
@@ -63,7 +63,9 @@ npm start
 - `dist/`：Vue 渲染进程静态资源
 - `dist-electron/`：Electron Main / preload 编译产物
 
-当前尚未接入安装包打包器；Windows EXE、macOS DMG 和 Linux AppImage 按路线图在发布阶段加入。
+P10 已接入 electron-builder：Windows 安装版/免安装版 EXE、macOS Intel/Apple Silicon DMG、Linux x64 AppImage。发布包自带运行时，不需要 Node.js；下载入口为 [GitHub Releases](https://github.com/cb-gif/remotehub-desktop/releases)。首版是未完成签名与真实设备全量验收的 beta 预发布。
+
+在对应操作系统执行 `npm run dist:win`、`npm run dist:mac` 或 `npm run dist:linux`，产物位于 `release/`。可用 `npm run test:packaged` 检查打包程序的离线启动、IPC、SQLite 查询与串口模块。详细命令、自动发布流程和验收清单见 [发布说明](docs/RELEASING.md)。
 
 ## 数据位置
 

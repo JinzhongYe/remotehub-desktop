@@ -1,4 +1,5 @@
-import { app, BrowserWindow, session } from 'electron'
+import { app, BrowserWindow, dialog, session } from 'electron'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerAppIpc } from './ipc/app.ipc'
 import { registerConnectionIpc } from './ipc/connection.ipc'
@@ -13,6 +14,14 @@ import { SftpService } from './services/sftp'
 import { SerialService } from './services/serial'
 import { DatabaseService } from './services/database'
 
+// Preserve the existing development profile when productName is introduced.
+app.setPath('userData', join(app.getPath('appData'), 'remotehub-desktop'))
+const smokeDirectory = app.commandLine.hasSwitch('smoke-test') ? process.env.REMOTEHUB_SMOKE_DIR : undefined
+if (smokeDirectory) {
+  mkdirSync(join(smokeDirectory, 'profile'), { recursive: true })
+  app.setPath('userData', join(smokeDirectory, 'profile'))
+}
+
 let mainWindow: BrowserWindow | null = null
 let storage: StorageService | null = null
 let ssh: SshService | null = null
@@ -20,12 +29,13 @@ let sftp: SftpService | null = null
 let serial: SerialService | null = null
 let database: DatabaseService | null = null
 
-function createWindow(): void {
+async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 840,
     minWidth: 1040,
     minHeight: 680,
+    show: !smokeDirectory,
     backgroundColor: '#000000',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     ...(process.platform === 'darwin' ? {} : { titleBarOverlay: { color: '#000000', symbolColor: '#f7f9fc', height: 48 } }),
@@ -39,16 +49,22 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  if (!app.isPackaged) {
-    void mainWindow.loadURL('http://127.0.0.1:5173')
+  if (!app.isPackaged && app.commandLine.hasSwitch('dev')) {
+    await mainWindow.loadURL('http://127.0.0.1:5173')
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
-    void mainWindow.loadFile(join(__dirname, '..', '..', 'dist', 'index.html'))
+    await mainWindow.loadFile(join(__dirname, '..', '..', 'dist', 'index.html'))
   }
   mainWindow.on('closed', () => { mainWindow = null })
+  if (smokeDirectory) {
+    const { runPackagedSmokeTest } = await import('./smoke-test')
+    const report = await runPackagedSmokeTest(mainWindow, smokeDirectory)
+    writeFileSync(join(smokeDirectory, 'result.json'), JSON.stringify(report, null, 2))
+    app.quit()
+  }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   storage = new StorageService()
   const credentials = new CredentialService()
@@ -62,12 +78,18 @@ app.whenReady().then(() => {
   registerSftpIpc(storage, sftp)
   registerSerialIpc(storage, serial)
   registerDatabaseIpc(storage, database)
-  createWindow()
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
-})
+  await createWindow()
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow().catch(startupFailure) })
+}).catch(startupFailure)
+
+function startupFailure(error: unknown): void {
+  const message = error instanceof Error ? error.stack || error.message : String(error)
+  if (smokeDirectory) writeFileSync(join(smokeDirectory, 'result.json'), JSON.stringify({ ok: false, error: message }))
+  else dialog.showErrorBox('RemoteHub could not start', message)
+  app.exit(1)
+}
 
 app.on('window-all-closed', () => {
-  storage?.close()
   if (process.platform !== 'darwin') app.quit()
 })
 

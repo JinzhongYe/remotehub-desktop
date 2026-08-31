@@ -5,7 +5,7 @@ cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 goto :missing_node
 
-node -e "process.exit(Number(process.versions.node.split('.')[0]) < 20 ? 1 : 0)" >nul 2>nul
+node -e "const [major,minor]=process.versions.node.split('.').map(Number);process.exit(major<22 || (major===22 && minor<12) ? 1 : 0)" >nul 2>nul
 if errorlevel 1 goto :old_node
 
 where npm >nul 2>nul
@@ -14,6 +14,7 @@ if errorlevel 1 goto :missing_npm
 if not exist "node_modules\.bin\electron.cmd" goto :install_dependencies
 if not exist "node_modules\serialport\package.json" goto :install_dependencies
 if not exist "node_modules\mysql2\package.json" goto :install_dependencies
+if not exist "node_modules\electron-builder\package.json" goto :install_dependencies
 goto :dependencies_ready
 
 :install_dependencies
@@ -33,17 +34,17 @@ if not "%EXIT_CODE%"=="0" (
 exit /b %EXIT_CODE%
 
 :missing_node
-echo Node.js 20 or newer is required. Install it from https://nodejs.org/ and run this file again.
+echo Node.js 22.12 or newer is required for source builds. Install it from https://nodejs.org/ or download a ready-to-run release.
 pause
 exit /b 1
 
 :old_node
-echo The installed Node.js version is too old. Please install Node.js 20 or newer from https://nodejs.org/.
+echo The installed Node.js version is too old. Please install Node.js 22.12 or newer, or download a ready-to-run release.
 pause
 exit /b 1
 
 :missing_npm
-echo npm was not found. Reinstall Node.js 20 or newer with npm included.
+echo npm was not found. Reinstall Node.js 22.12 or newer with npm included.
 pause
 exit /b 1
 

@@ -1,21 +1,35 @@
 {
   "name": "remotehub-desktop",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "description": "Cross-platform SSH, SFTP and database workbench",
+  "author": "cb-gif",
+  "homepage": "https://github.com/cb-gif/remotehub-desktop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cb-gif/remotehub-desktop.git"
+  },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "main": "dist-electron/main/index.js",
   "type": "commonjs",
   "scripts": {
     "postinstall": "node scripts/rebuild-native.mjs",
-    "dev": "npm run build && concurrently -k \"vite preview --configLoader native --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "dev": "npm run build && concurrently -k \"vite preview --configLoader native --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "build": "vite build --configLoader native && tsc -p tsconfig.node.json",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron",
     "test": "node scripts/run-tests.mjs",
-    "start": "electron ."
+    "start": "electron .",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "pack": "npm run build && electron-builder --dir --publish never",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --x64 --publish never",
+    "test:packaged": "node scripts/smoke-packaged.mjs",
+    "release:checksums": "node scripts/release-checksums.mjs",
+    "release:verify": "node scripts/verify-release.mjs"
   },
   "dependencies": {
     "@codemirror/lang-sql": "^6.8.0",
@@ -39,6 +53,7 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "concurrently": "^9.1.2",
     "electron": "^34.0.0",
+    "electron-builder": "26.15.3",
     "eslint": "^9.17.0",
     "eslint-plugin-vue": "^10.0.0",
     "typescript": "^5.7.2",
