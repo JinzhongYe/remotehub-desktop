@@ -3,13 +3,14 @@
   "appId": "io.github.cb-gif.remotehub-desktop",
   "productName": "RemoteHub Desktop",
   "directories": { "output": "release" },
-  "files": ["dist/**/*", "dist-electron/**/*", "package.json", "!**/*.map"],
+  "files": ["dist/**/*", "dist-electron/**/*", "assets/**/*", "package.json", "!**/*.map"],
   "asar": true,
-  "asarUnpack": ["**/*.node", "node_modules/better-sqlite3/**", "node_modules/@serialport/bindings-cpp/**"],
-  "npmRebuild": true,
+  "asarUnpack": ["**/*.node", "node_modules/better-sqlite3/**", "node_modules/@serialport/bindings-cpp/**", "node_modules/node-pty/**"],
+  "npmRebuild": false,
+  "beforePack": "scripts/before-pack.cjs",
   "nativeRebuilder": "sequential",
   "publish": null,
-  "win": { "target": ["nsis", "portable"] },
+  "win": { "target": ["nsis", "portable"], "icon": "assets/remotehub.png" },
   "nsis": {
     "artifactName": "RemoteHub-Desktop-${version}-win-${arch}-setup.${ext}",
     "oneClick": false,
@@ -21,11 +22,13 @@
   "portable": { "artifactName": "RemoteHub-Desktop-${version}-win-${arch}-portable.${ext}" },
   "mac": {
     "target": ["dmg"],
+    "icon": "assets/remotehub.png",
     "category": "public.app-category.developer-tools",
     "artifactName": "RemoteHub-Desktop-${version}-mac-${arch}.${ext}"
   },
   "linux": {
     "target": ["AppImage"],
+    "icon": "assets/remotehub.png",
     "category": "Development",
     "executableName": "remotehub-desktop",
     "artifactName": "RemoteHub-Desktop-${version}-linux-${arch}.${ext}"
