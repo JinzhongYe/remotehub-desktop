@@ -79,7 +79,7 @@ button:disabled { cursor: default; opacity: .7; }
 .window-pill { color: var(--blue); border-color: rgba(128,183,255,.35); background: rgba(128,183,255,.07); font-size: 12px; }
 .app-body { display: flex; min-height: 0; flex: 1; }
 .explorer { display: flex; width: 260px; min-width: 190px; max-width: 50vw; flex: 0 0 auto; flex-direction: column; overflow: hidden; resize: horizontal; border-right: 1px solid var(--line); background: #080808; }
-.explorer.collapsed { width: 44px; min-width: 44px; resize: none; }
+.explorer.collapsed { width: 44px !important; min-width: 44px; resize: none; }
 .explorer-title { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px 8px; color: #f0f4f8; font-weight: 650; }
 .explorer.collapsed .explorer-title { justify-content: center; padding-inline: 0; }
 .explorer-actions { display: flex; align-items: center; }
@@ -301,6 +301,8 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .field.wide { grid-column: span 2; }
 .field input, .field select, .field textarea { width: 100%; padding: 8px; border: 1px solid #344252; border-radius: 4px; outline: 0; color: var(--text); background: #0f151c; font-size: 11px; }
 .field textarea { min-height: 78px; resize: vertical; font-family: "Cascadia Mono", Consolas, monospace; line-height: 1.35; }
+.sftp-editor { display: flex; width: min(900px, calc(100vw - 32px)); height: min(700px, calc(100vh - 32px)); flex-direction: column; }
+.sftp-editor textarea { min-height: 0; flex: 1; resize: none; padding: 10px; border: 1px solid var(--line); border-radius: 4px; outline: 0; color: var(--text); background: var(--input); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; tab-size: 2; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); }
 .input-with-action, .private-key-picker { display: flex; align-items: center; gap: 7px; }
 .input-with-action input { min-width: 0; flex: 1; }

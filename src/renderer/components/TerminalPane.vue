@@ -43,7 +43,7 @@ const pendingStatus = new Map<string, SshStatusEvent>()
 
 const terminalThemes: Record<'dark' | 'light', ITheme> = {
   dark: { background: '#0f1720', foreground: '#d8e1ea', cursor: '#68d6bd', selectionBackground: '#315d86', selectionForeground: '#ffffff', selectionInactiveBackground: '#24425f' },
-  light: { background: '#f8fafc', foreground: '#263445', cursor: '#1769aa', selectionBackground: '#b9d7f0', selectionForeground: '#101820', selectionInactiveBackground: '#d7e6f2' }
+  light: { background: '#f8fafc', foreground: '#263445', cursor: '#1769aa', yellow: '#6b5200', brightYellow: '#7a5d00', selectionBackground: '#b9d7f0', selectionForeground: '#101820', selectionInactiveBackground: '#d7e6f2' }
 }
 
 function terminalTheme(): ITheme {

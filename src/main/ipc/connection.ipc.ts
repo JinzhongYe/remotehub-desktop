@@ -1,7 +1,7 @@
-import { ipcMain } from 'electron'
+import { dialog, ipcMain } from 'electron'
 import { createConnection } from 'node:net'
-import { stat } from 'node:fs/promises'
-import { connectionErrorCode } from '../../shared/connection'
+import { readFile, stat, writeFile } from 'node:fs/promises'
+import { connectionErrorCode, createConnectionExport, parseConnectionExport } from '../../shared/connection'
 import type { Connection, ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestRequest, ConnectionTestResult } from '../../shared/types'
 import { CredentialService } from '../services/credentials'
 import { appError, StorageService } from '../services/storage'
@@ -33,6 +33,32 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
   })
   ipcMain.handle('connections:duplicate', (_event, id: string) => storage.duplicateConnection(id))
   ipcMain.handle('connections:reorder', (_event, items: ConnectionOrderItem[]) => storage.reorderConnections(items))
+  ipcMain.handle('connections:export', async () => {
+    const result = await dialog.showSaveDialog({ title: 'Export connections', defaultPath: 'remotehub-connections.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
+    if (result.canceled || !result.filePath) return { canceled: true, count: 0 }
+    const data = createConnectionExport(storage.listConnections(), storage.listGroups())
+    await writeFile(result.filePath, JSON.stringify(data, null, 2), 'utf8')
+    return { canceled: false, count: data.connections.length }
+  })
+  ipcMain.handle('connections:import', async () => {
+    const result = await dialog.showOpenDialog({ title: 'Import connections', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+    const filePath = result.filePaths[0]
+    if (result.canceled || !filePath) return { canceled: true, count: 0 }
+    if ((await stat(filePath)).size > 5 * 1024 * 1024) throw appError('CONNECTION_IMPORT_TOO_LARGE', 'Connection JSON must be 5 MB or smaller')
+    const data = parseConnectionExport(await readFile(filePath, 'utf8'))
+    const groupIds = new Set([...storage.listGroups().map((group) => group.id), ...data.groups.map((group) => group.id)])
+    data.connections.forEach((connection) => {
+      if (connection.groupId && !groupIds.has(connection.groupId)) throw appError('GROUP_NOT_FOUND', `Imported group not found: ${connection.groupId}`)
+      storage.validateConnection({ ...connection, groupId: undefined })
+    })
+    data.groups.sort((a, b) => a.sortOrder - b.sortOrder).forEach((group) => storage.saveGroup(group.name, group.id))
+    data.connections.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach((connection) => {
+      const previousCredentialId = storage.getConnection(connection.id!)?.credentialId
+      storage.saveConnection({ ...connection, credentialId: previousCredentialId })
+      if (previousCredentialId && !storage.hasCredentialReference(previousCredentialId)) credentials.delete(previousCredentialId)
+    })
+    return { canceled: false, count: data.connections.length }
+  })
   ipcMain.handle('connections:test', async (_event, target: string | ConnectionTestRequest) => {
     const request = typeof target === 'string' ? undefined : target
     if (request && (typeof request !== 'object' || !request.connection || typeof request.connection !== 'object')) throw appError('INVALID_CONNECTION', 'Connection input is invalid')

@@ -30,6 +30,8 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke('connections:delete', id),
     duplicate: (id: string) => ipcRenderer.invoke('connections:duplicate', id),
     reorder: (items: ConnectionOrderItem[]) => ipcRenderer.invoke('connections:reorder', items),
+    export: () => ipcRenderer.invoke('connections:export'),
+    import: () => ipcRenderer.invoke('connections:import'),
     test: (target: string | ConnectionTestRequest) => ipcRenderer.invoke('connections:test', target)
   },
   ssh: {
@@ -57,6 +59,8 @@ const api = {
     list: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:list', sessionId, path),
     mkdir: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:mkdir', sessionId, path),
     rename: (sessionId: string, oldPath: string, newPath: string) => ipcRenderer.invoke('sftp:rename', sessionId, oldPath, newPath),
+    readText: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:readText', sessionId, path),
+    writeText: (sessionId: string, path: string, content: string, expectedModifiedAt: number) => ipcRenderer.invoke('sftp:writeText', sessionId, path, content, expectedModifiedAt),
     remove: (sessionId: string, path: string, type: 'file' | 'directory' | 'link') => ipcRenderer.invoke('sftp:remove', sessionId, path, type),
     enqueueUploads: (sessionId: string, localPaths: string[], remoteDirectory: string, overwrite = false) => ipcRenderer.invoke('sftp:enqueueUploads', sessionId, localPaths, remoteDirectory, overwrite),
     enqueueDownload: (sessionId: string, remotePath: string, localDirectory: string, entryType: 'file' | 'directory' | 'link', overwrite = false) => ipcRenderer.invoke('sftp:enqueueDownload', sessionId, remotePath, localDirectory, entryType, overwrite),

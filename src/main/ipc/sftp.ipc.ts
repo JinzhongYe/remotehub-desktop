@@ -17,6 +17,8 @@ export function registerSftpIpc(storage: StorageService, sftp: SftpService): voi
   ipcMain.handle('sftp:list', (_event, sessionId: string, path: string) => sftp.list(sessionId, path))
   ipcMain.handle('sftp:mkdir', async (_event, sessionId: string, path: string) => { await sftp.mkdir(sessionId, path); return { ok: true } })
   ipcMain.handle('sftp:rename', async (_event, sessionId: string, oldPath: string, newPath: string) => { await sftp.rename(sessionId, oldPath, newPath); return { ok: true } })
+  ipcMain.handle('sftp:readText', (_event, sessionId: string, path: string) => sftp.readText(sessionId, path))
+  ipcMain.handle('sftp:writeText', (_event, sessionId: string, path: string, content: string, expectedModifiedAt: number) => sftp.writeText(sessionId, path, content, expectedModifiedAt))
   ipcMain.handle('sftp:remove', async (_event, sessionId: string, path: string, type: 'file' | 'directory' | 'link') => { await sftp.remove(sessionId, path, type); return { ok: true } })
   ipcMain.handle('sftp:enqueueUploads', (_event, sessionId: string, localPaths: string[], remoteDirectory: string, overwrite: boolean) => sftp.enqueueUploads(sessionId, localPaths, remoteDirectory, Boolean(overwrite)))
   ipcMain.handle('sftp:enqueueDownload', (_event, sessionId: string, remotePath: string, localDirectory: string, entryType: 'file' | 'directory' | 'link', overwrite: boolean) => sftp.enqueueDownload(sessionId, remotePath, localDirectory, entryType, Boolean(overwrite)))

@@ -9,7 +9,7 @@
   "npmRebuild": true,
   "nativeRebuilder": "sequential",
   "publish": null,
-  "win": { "target": ["nsis", "portable"] },
+  "win": { "target": ["nsis", "portable"], "icon": "assets/remotehub.png" },
   "nsis": {
     "artifactName": "RemoteHub-Desktop-${version}-win-${arch}-setup.${ext}",
     "oneClick": false,
@@ -26,6 +26,7 @@
   },
   "linux": {
     "target": ["AppImage"],
+    "icon": "assets/remotehub.png",
     "category": "Development",
     "executableName": "remotehub-desktop",
     "artifactName": "RemoteHub-Desktop-${version}-linux-${arch}.${ext}"

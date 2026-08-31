@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { isUtf8 } from 'node:buffer'
 import { basename, isAbsolute, join, posix } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import type { Connection } from '../../shared/types'
@@ -19,6 +20,9 @@ type SftpLike = {
   stat(path: string, callback: (error: Error | undefined, attrs: SftpAttrs) => void): void
   mkdir(path: string, callback: (error?: Error) => void): void
   rename(oldPath: string, newPath: string, callback: (error?: Error) => void): void
+  readFile(path: string, callback: (error: Error | undefined, data: Buffer) => void): void
+  writeFile(path: string, data: Buffer, callback: (error?: Error) => void): void
+  setstat(path: string, attrs: { atime: number; mtime: number }, callback: (error?: Error) => void): void
   unlink(path: string, callback: (error?: Error) => void): void
   rmdir(path: string, callback: (error?: Error) => void): void
   createReadStream(path: string, options: { start?: number }): Readable
@@ -34,10 +38,12 @@ type SshClientLike = {
 type SshClientConstructor = new () => SshClientLike
 type SftpSession = { id: string; connectionId: string; client: SshClientLike; sftp: SftpLike }
 type EventSink = (channel: 'sftp:transfer', payload: SftpTransferEvent) => void
-type FilePlan = { localPath: string; remotePath: string; relativePath: string; size: number }
+type FilePlan = { localPath: string; remotePath: string; relativePath: string; size: number; modifiedAt: number }
+type DirectoryPlan = { path: string; modifiedAt: number }
 
 const loadNativeModule = createRequire(__filename)
 const MAX_TRANSFER_FILES = 5000
+const MAX_EDIT_BYTES = 2 * 1024 * 1024
 
 export class SftpService {
   private readonly sessions = new Map<string, SftpSession>()
@@ -124,7 +130,35 @@ export class SftpService {
 
   rename(sessionId: string, oldPath: string, newPath: string): Promise<void> {
     const session = this.getSession(sessionId)
-    return new Promise((resolve, reject) => session.sftp.rename(validateRemotePath(oldPath), validateRemotePath(newPath), (error) => error ? reject(toSftpError(error)) : resolve()))
+    const source = validateRemotePath(oldPath)
+    const target = validateRemotePath(newPath)
+    if (source === target || posix.dirname(source) !== posix.dirname(target)) throw appError('SFTP_RENAME_INVALID', 'Enter a new file or folder name without slashes')
+    return new Promise((resolve, reject) => session.sftp.rename(source, target, (error) => error ? reject(toSftpError(error)) : resolve()))
+  }
+
+  async readText(sessionId: string, pathInput: string): Promise<{ content: string; modifiedAt: number }> {
+    const session = this.getSession(sessionId)
+    const path = validateRemotePath(pathInput)
+    const attrs = await this.remoteStat(session.sftp, path)
+    if (!attrs) throw appError('SFTP_PATH_NOT_FOUND', 'Remote file no longer exists')
+    if (Number(attrs.size || 0) > MAX_EDIT_BYTES) throw appError('SFTP_EDIT_TOO_LARGE', 'Online editing supports text files up to 2 MB')
+    const data = await new Promise<Buffer>((resolve, reject) => session.sftp.readFile(path, (error, value) => error ? reject(toSftpError(error)) : resolve(value)))
+    // ponytail: the built-in editor is UTF-8 text-only; use download/upload when binary or larger-file editing is needed.
+    if (data.length > MAX_EDIT_BYTES) throw appError('SFTP_EDIT_TOO_LARGE', 'Online editing supports text files up to 2 MB')
+    if (!isUtf8(data) || data.includes(0)) throw appError('SFTP_EDIT_BINARY', 'Online editing supports UTF-8 text files only')
+    return { content: data.toString('utf8'), modifiedAt: Number(attrs.mtime || 0) * 1000 }
+  }
+
+  async writeText(sessionId: string, pathInput: string, content: string, expectedModifiedAt: number): Promise<{ modifiedAt: number }> {
+    if (typeof content !== 'string' || Buffer.byteLength(content) > MAX_EDIT_BYTES) throw appError('SFTP_EDIT_TOO_LARGE', 'Online editing supports text files up to 2 MB')
+    const session = this.getSession(sessionId)
+    const path = validateRemotePath(pathInput)
+    const attrs = await this.remoteStat(session.sftp, path)
+    if (!attrs) throw appError('SFTP_PATH_NOT_FOUND', 'Remote file no longer exists')
+    if (Number(attrs.mtime || 0) * 1000 !== expectedModifiedAt) throw appError('SFTP_EDIT_CONFLICT', 'Remote file changed after it was opened; reopen it before saving')
+    await new Promise<void>((resolve, reject) => session.sftp.writeFile(path, Buffer.from(content), (error) => error ? reject(toSftpError(error)) : resolve()))
+    const updated = await this.remoteStat(session.sftp, path)
+    return { modifiedAt: Number(updated?.mtime || 0) * 1000 }
   }
 
   remove(sessionId: string, path: string, type: SftpEntryType): Promise<void> {
@@ -139,14 +173,16 @@ export class SftpService {
     const { files, directories } = buildUploadPlan(localPaths, directory)
     const conflicts = await findConflicts(files, async (file) => Boolean(await this.remoteStat(session.sftp, file.remotePath)), 'upload')
     if (conflicts.length && !overwrite) return { transferIds: [], conflicts }
-    for (const remotePath of directories.sort((a, b) => pathDepth(a) - pathDepth(b))) await this.ensureRemoteDirectory(session.sftp, remotePath)
+    for (const directory of directories.sort((a, b) => pathDepth(a.path) - pathDepth(b.path))) await this.ensureRemoteDirectory(session.sftp, directory.path)
+    for (const directory of directories) await this.setRemoteMtime(session.sftp, directory.path, directory.modifiedAt)
+    const directoryTimes = new Map(directories.map((directory) => [directory.path, directory.modifiedAt]))
     const transferIds = files.map((file) => this.transfers.enqueue({
       sessionId,
       direction: 'upload',
       name: basename(file.localPath),
       relativePath: file.relativePath,
       total: file.size,
-      start: (offset, hooks) => this.startUpload(session.sftp, file, offset, hooks)
+      start: (offset, hooks) => this.startUpload(session.sftp, file, offset, hooks, directoryTimes.get(posix.dirname(file.remotePath)))
     }).transferId)
     return { transferIds, conflicts: [] }
   }
@@ -164,7 +200,7 @@ export class SftpService {
     else {
       const attrs = await this.remoteStat(session.sftp, remotePath)
       if (!attrs) throw appError('SFTP_PATH_NOT_FOUND', 'Remote file no longer exists')
-      files.push({ localPath: join(localDirectory, rootName), remotePath, relativePath: rootName, size: Number(attrs.size || 0) })
+      files.push({ localPath: join(localDirectory, rootName), remotePath, relativePath: rootName, size: Number(attrs.size || 0), modifiedAt: Number(attrs.mtime || 0) })
     }
     assertUniqueLocalTargets(files)
     const conflicts = await findConflicts(files, async (file) => existsSync(file.localPath), 'download')
@@ -283,13 +319,21 @@ export class SftpService {
       const localPath = join(localDirectory, safeLocalFileName(entry.name))
       const relativePath = `${relativeDirectory}/${entry.name}`.replaceAll('\\', '/')
       if (entry.type === 'directory') await this.collectDownloadPlan(sftp, entry.path, localPath, relativePath, files, directories, depth + 1)
-      else files.push({ localPath, remotePath: entry.path, relativePath, size: entry.size })
+      else files.push({ localPath, remotePath: entry.path, relativePath, size: entry.size, modifiedAt: Math.floor(entry.modifiedAt / 1000) })
       if (files.length > MAX_TRANSFER_FILES) throw appError('TRANSFER_TOO_LARGE', `Folder contains more than ${MAX_TRANSFER_FILES} files`)
     }
   }
 
-  private startUpload(sftp: SftpLike, file: FilePlan, offset: number, hooks: TransferHooks): TransferControl {
-    return pipeTransfer(createReadStream(file.localPath, { start: offset }), sftp.createWriteStream(file.remotePath, { flags: offset > 0 ? 'r+' : 'w', start: offset }), offset, hooks)
+  private startUpload(sftp: SftpLike, file: FilePlan, offset: number, hooks: TransferHooks, parentModifiedAt?: number): TransferControl {
+    return pipeTransfer(createReadStream(file.localPath, { start: offset }), sftp.createWriteStream(file.remotePath, { flags: offset > 0 ? 'r+' : 'w', start: offset }), offset, {
+      ...hooks,
+      done: (error) => {
+        if (error) return hooks.done(error)
+        void this.setRemoteMtime(sftp, file.remotePath, file.modifiedAt)
+          .then(() => parentModifiedAt === undefined ? undefined : this.setRemoteMtime(sftp, posix.dirname(file.remotePath), parentModifiedAt))
+          .then(() => hooks.done(), hooks.done)
+      }
+    })
   }
 
   private startDownload(sftp: SftpLike, file: FilePlan, offset: number, hooks: TransferHooks): TransferControl {
@@ -299,6 +343,10 @@ export class SftpService {
   private call(sessionId: string, method: 'mkdir' | 'unlink' | 'rmdir', path: string): Promise<void> {
     const session = this.getSession(sessionId)
     return new Promise((resolve, reject) => session.sftp[method](path, (error) => error ? reject(toSftpError(error)) : resolve()))
+  }
+
+  private setRemoteMtime(sftp: SftpLike, path: string, modifiedAt: number): Promise<void> {
+    return new Promise((resolve, reject) => sftp.setstat(path, { atime: modifiedAt, mtime: modifiedAt }, (error) => error ? reject(toSftpError(error)) : resolve()))
   }
 
   private emit(event: SftpTransferEvent): void {
@@ -313,19 +361,20 @@ export class SftpService {
   }
 }
 
-function buildUploadPlan(localPaths: string[], remoteDirectory: string): { files: FilePlan[]; directories: string[] } {
+export function buildUploadPlan(localPaths: string[], remoteDirectory: string): { files: FilePlan[]; directories: DirectoryPlan[] } {
   const files: FilePlan[] = []
-  const directories = new Set<string>()
+  const directories = new Map<string, number>()
   const targets = new Set<string>()
   const addFile = (localPath: string, remotePath: string, relativePath: string): void => {
     if (files.length >= MAX_TRANSFER_FILES) throw appError('TRANSFER_TOO_LARGE', `Selection contains more than ${MAX_TRANSFER_FILES} files`)
     if (targets.has(remotePath)) throw appError('TRANSFER_DUPLICATE_TARGET', `Multiple local files map to ${remotePath}`)
     targets.add(remotePath)
-    files.push({ localPath, remotePath, relativePath, size: statSync(localPath).size })
+    const stat = statSync(localPath)
+    files.push({ localPath, remotePath, relativePath, size: stat.size, modifiedAt: Math.floor(stat.mtimeMs / 1000) })
   }
   const walk = (localDirectory: string, remotePath: string, relativePath: string, depth: number): void => {
     if (depth > 100) throw appError('TRANSFER_TOO_DEEP', 'Local folder nesting exceeds 100 levels')
-    directories.add(remotePath)
+    directories.set(remotePath, Math.floor(statSync(localDirectory).mtimeMs / 1000))
     for (const entry of readdirSync(localDirectory, { withFileTypes: true })) {
       const localChild = join(localDirectory, entry.name)
       const remoteChild = joinRemotePath(remotePath, entry.name)
@@ -343,7 +392,7 @@ function buildUploadPlan(localPaths: string[], remoteDirectory: string): { files
     else if (stat.isFile()) addFile(localPath, remotePath, name)
     else throw appError('TRANSFER_INPUT_INVALID', `Unsupported local item: ${name}`)
   }
-  return { files, directories: [...directories] }
+  return { files, directories: [...directories].map(([path, modifiedAt]) => ({ path, modifiedAt })) }
 }
 
 async function findConflicts(files: FilePlan[], exists: (file: FilePlan) => Promise<boolean>, direction: 'upload' | 'download'): Promise<SftpTransferConflict[]> {
@@ -359,7 +408,7 @@ async function findConflicts(files: FilePlan[], exists: (file: FilePlan) => Prom
   return conflicts.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-function pipeTransfer(source: Readable, target: Writable, offset: number, hooks: TransferHooks): TransferControl {
+export function pipeTransfer(source: Readable, target: Writable, offset: number, hooks: TransferHooks): TransferControl {
   let transferred = offset
   let settled = false
   const done = (error?: Error): void => {
@@ -373,7 +422,7 @@ function pipeTransfer(source: Readable, target: Writable, offset: number, hooks:
   })
   source.once('error', done)
   target.once('error', done)
-  target.once('finish', () => done())
+  target.once('close', () => done())
   source.pipe(target)
   return {
     pause: () => source.pause(),
