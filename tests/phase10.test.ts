@@ -7,11 +7,23 @@ const read = (path: string) => readFileSync(resolve(path), 'utf8')
 describe('Phase 10 release contracts', () => {
   it('packages only runtime outputs and unpacks native addons', () => {
     const config = JSON.parse(read('electron-builder.json'))
-    expect(config.files).toEqual(['dist/**/*', 'dist-electron/**/*', 'package.json', '!**/*.map'])
+    expect(config.files).toEqual(['dist/**/*', 'dist-electron/**/*', 'assets/**/*', 'package.json', '!**/*.map'])
     expect(config.asar).toBe(true)
     expect(config.asarUnpack).toContain('**/*.node')
-    expect(config.npmRebuild).toBe(true)
+    expect(config.asarUnpack).toContain('node_modules/node-pty/**')
+    expect(config.npmRebuild).toBe(false)
+    expect(config.beforePack).toBe('scripts/before-pack.cjs')
+    expect(config.beforeBuild).toBeUndefined()
     expect(config.publish).toBeNull()
+  })
+
+  it('uses the custom application icon on every platform', () => {
+    const config = JSON.parse(read('electron-builder.json'))
+    for (const platform of ['win', 'mac', 'linux']) expect(config[platform].icon).toBe('assets/remotehub.png')
+    const icon = readFileSync(resolve('assets/remotehub.png'))
+    expect(icon.subarray(1, 4).toString()).toBe('PNG')
+    expect(icon.readUInt32BE(16)).toBeGreaterThanOrEqual(512)
+    expect(icon.readUInt32BE(20)).toBeGreaterThanOrEqual(512)
   })
 
   it('provides distinct installers for each target', () => {
@@ -37,6 +49,7 @@ describe('Phase 10 release contracts', () => {
     expect(main).toContain("!app.isPackaged && app.commandLine.hasSwitch('dev')")
     expect(main).toContain("join(app.getPath('appData'), 'remotehub-desktop')")
     expect(main).toContain('sandbox: true')
+    expect(main).toContain('(connection, credential) => database!.test(connection, credential)')
   })
 
   it('requires all packaged smoke tests before publishing a preview', () => {

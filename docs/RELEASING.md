@@ -20,6 +20,12 @@ npm run release:checksums
 
 SQLite 和串口属于原生模块，不能复制其他系统的 node_modules。electron-builder 在安装和打包时按目标 Electron ABI 重建；缺少预编译包时，本机需要 Python 与 C++ 工具链（Windows VS Build Tools / macOS Xcode Command Line Tools / Linux build-essential）。GitHub 托管 runner 已配置工具链。
 
+beta.2 新增 node-pty：Windows/macOS 优先使用 npm 包内自带且完整的 Node-API 预编译文件与辅助程序；没有匹配预编译文件的平台会正常编译。安装与打包共用 `native-dependencies.mjs`，不禁用 Spectre 等编译安全选项。打包冒烟检查会真正运行固定 PTY 命令验证兼容性，不加载用户 Shell 配置。
+
+node-pty 1.1.0 的 macOS 预编译辅助程序存在缺少执行位的上游打包问题（[上游 #850](https://github.com/microsoft/node-pty/issues/850)）。beta.3 在安装及 `beforePack` 中只修复包内 `spawn-helper` 的执行权限，发生在归档、签名和 DMG 创建之前；不在用户运行时更改应用权限，不跳过 PTY 启动验收。
+
+打包器默认全量重编译由 `beforePack` 中的受控重建替代（`npmRebuild: false`），但仍正常收集生产依赖。不要改为从 `beforeBuild` 返回 false，那会跳过生产依赖收集。
+
 ## GitHub 发布
 
 1. 更新 package.json 版本，并运行 `npm install` 同步 package-lock.json。

@@ -1,11 +1,14 @@
-import { app, type BrowserWindow } from 'electron'
+import { app, nativeImage, type BrowserWindow } from 'electron'
 import Database from 'better-sqlite3'
 import { SerialPort } from 'serialport'
 import { join } from 'node:path'
+import { spawn } from 'node-pty'
 
 // Explicit test mode only. No saved connections or real remote endpoints are used.
 export async function runPackagedSmokeTest(window: BrowserWindow, directory: string): Promise<Record<string, unknown>> {
   if (!app.isPackaged) throw new Error('Smoke test requires a packaged application')
+  if (nativeImage.createFromPath(join(app.getAppPath(), 'assets', 'remotehub.png')).isEmpty()) throw new Error('Packaged application icon is missing')
+  await testPackagedPty(directory)
   const filename = join(directory, 'smoke.sqlite')
   const client = new Database(filename)
   try {
@@ -27,7 +30,26 @@ export async function runPackagedSmokeTest(window: BrowserWindow, directory: str
       const result = await window.api.database.query(session.sessionId, {sql:'SELECT value FROM sample',page:0,pageSize:200});
       if (result.rows?.[0]?.[0] !== '{"release":true,"nested":[1,2]}') throw new Error('SQLite IPC query failed');
     } finally { await window.api.database.disconnect(session.sessionId); }
-    return {ok:true,version:info.version,platform:info.platform,offline:true,preload:true,sqlite:true,serialBinding:true};
+    return {ok:true,version:info.version,platform:info.platform,offline:true,preload:true,sqlite:true,serialBinding:true,pty:true,appIcon:true};
   })()`)
   return report as Record<string, unknown>
+}
+
+async function testPackagedPty(directory: string): Promise<void> {
+  // A fixed, non-interactive command verifies native helpers without loading
+  // PowerShell profiles or connecting to any user-configured terminal.
+  const windows = process.platform === 'win32'
+  const command = windows ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe') : '/bin/sh'
+  const args = windows ? ['/d', '/c', 'echo REMOTEHUB_PTY_OK'] : ['-c', 'printf REMOTEHUB_PTY_OK']
+  const child = spawn(command, args, { cwd: directory, env: process.env, name: 'xterm-256color', cols: 80, rows: 24 })
+  let output = ''
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => { try { child.kill() } catch { /* already exited */ } reject(new Error('Packaged PTY test timed out')) }, 10000)
+    child.onData(data => { output += data })
+    child.onExit(({ exitCode }) => {
+      clearTimeout(timer)
+      if (exitCode === 0 && output.includes('REMOTEHUB_PTY_OK')) resolve()
+      else reject(new Error(`Packaged PTY test failed (exit ${exitCode})`))
+    })
+  })
 }

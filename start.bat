@@ -15,6 +15,7 @@ if not exist "node_modules\.bin\electron.cmd" goto :install_dependencies
 if not exist "node_modules\serialport\package.json" goto :install_dependencies
 if not exist "node_modules\mysql2\package.json" goto :install_dependencies
 if not exist "node_modules\electron-builder\package.json" goto :install_dependencies
+if not exist "node_modules\node-pty\package.json" goto :install_dependencies
 goto :dependencies_ready
 
 :install_dependencies
