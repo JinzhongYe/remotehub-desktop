@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import type { Connection, ConnectionInput, ConnectionOrderItem, Group } from '../../../shared/types'
 import type Database from 'better-sqlite3'
 
@@ -56,7 +56,7 @@ export class StorageService {
       CREATE TABLE IF NOT EXISTS connections (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial')),
+        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial', 'shell')),
         host TEXT NOT NULL,
         port INTEGER NOT NULL,
         username TEXT,
@@ -81,9 +81,9 @@ export class StorageService {
       ensureColumn(db, 'connections', 'sort_order', 'INTEGER NOT NULL DEFAULT 0')
       ensureColumn(db, 'connections', 'last_connected_at', 'INTEGER')
       ensureColumn(db, 'connections', 'host_key_fingerprint', 'TEXT')
-      migrateConnectionTypes(db)
       ensureColumn(db, 'connections', 'database_ssl_mode', 'TEXT')
       ensureColumn(db, 'connections', 'ssh_tunnel_id', 'TEXT')
+      migrateConnectionTypes(db)
       this.db = db
     } catch {
       // Native modules can be unavailable immediately after a dependency install.
@@ -290,22 +290,23 @@ function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'c
   const host = String(input.host || '').trim()
   if (!name || !host) throw appError('INVALID_CONNECTION', '连接名称和主机/串口地址不能为空')
   const port = Number(input.port)
-  if (input.type !== 'ssh' && input.type !== 'database' && input.type !== 'serial') throw appError('INVALID_CONNECTION_TYPE', 'Connection type is invalid')
+  if (!['ssh', 'database', 'serial', 'shell'].includes(input.type)) throw appError('INVALID_CONNECTION_TYPE', 'Connection type is invalid')
   const maximumPort = input.type === 'serial' ? 4_000_000 : 65535
-  if (!Number.isInteger(port) || port < 1 || port > maximumPort) throw appError('INVALID_PORT', input.type === 'serial' ? '波特率必须是1到4000000之间的整数' : '端口必须是1到65535之间的整数')
+  if (input.type !== 'shell' && (!Number.isInteger(port) || port < 1 || port > maximumPort)) throw appError('INVALID_PORT', input.type === 'serial' ? '波特率必须是1到4000000之间的整数' : '端口必须是1到65535之间的整数')
+  if (input.type === 'shell' && (!isAbsolute(host) || host.length > 4096)) throw appError('SHELL_DIRECTORY_INVALID', 'Shell working directory is invalid')
   const type = input.type
   return {
     name: name.slice(0, 120),
     type,
-    host: host.slice(0, 255),
-    port,
-    username: type === 'serial' ? undefined : String(input.username || '').trim().slice(0, 120) || undefined,
-    authType: type === 'serial' ? undefined : input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : undefined,
+    host: host.slice(0, type === 'shell' ? 4096 : 255),
+    port: type === 'shell' ? 1 : port,
+    username: type === 'serial' || type === 'shell' ? undefined : String(input.username || '').trim().slice(0, 120) || undefined,
+    authType: type === 'serial' || type === 'shell' ? undefined : input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : undefined,
     databaseType: type === 'database' && ['mysql', 'postgres', 'sqlite'].includes(input.databaseType || '') ? input.databaseType : undefined,
     database: type === 'database' ? String(input.database || '').trim().slice(0, 200) || undefined : undefined,
     databaseSslMode: type === 'database' && input.databaseType === 'postgres' && ['disable', 'require', 'verify-full'].includes(input.databaseSslMode || '') ? input.databaseSslMode : undefined,
     sshTunnelId: type === 'database' && input.databaseType === 'postgres' ? String(input.sshTunnelId || '').trim().slice(0, 100) || undefined : undefined,
-    credentialId: type === 'serial' || (type === 'database' && input.databaseType === 'sqlite') ? undefined : String(input.credentialId || '').trim().slice(0, 160) || undefined,
+    credentialId: type === 'serial' || type === 'shell' || (type === 'database' && input.databaseType === 'sqlite') ? undefined : String(input.credentialId || '').trim().slice(0, 160) || undefined,
     groupId: String(input.groupId || '').trim().slice(0, 100) || undefined,
     favorite: Boolean(input.favorite),
     sortOrder: Number.isInteger(input.sortOrder) && Number(input.sortOrder) >= 0 ? Number(input.sortOrder) : 0
@@ -343,7 +344,7 @@ function ensureColumn(db: Database.Database, table: string, column: string, defi
 
 function migrateConnectionTypes(db: Database.Database): void {
   const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'connections'").get() as { sql?: string } | undefined
-  if (table?.sql?.includes("'serial'")) return
+  if (table?.sql?.includes("'shell'")) return
   db.pragma('foreign_keys = OFF')
   try {
     db.exec(`
@@ -351,13 +352,15 @@ function migrateConnectionTypes(db: Database.Database): void {
       CREATE TABLE connections_next (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial')),
+        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial', 'shell')),
         host TEXT NOT NULL,
         port INTEGER NOT NULL,
         username TEXT,
         auth_type TEXT,
         database_type TEXT,
         database_name TEXT,
+        database_ssl_mode TEXT,
+        ssh_tunnel_id TEXT,
         credential_id TEXT,
         host_key_fingerprint TEXT,
         group_id TEXT,
@@ -368,7 +371,7 @@ function migrateConnectionTypes(db: Database.Database): void {
         updated_at INTEGER NOT NULL,
         FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE SET NULL
       );
-      INSERT INTO connections_next SELECT id, name, type, host, port, username, auth_type, database_type, database_name, credential_id, host_key_fingerprint, group_id, favorite, sort_order, last_connected_at, created_at, updated_at FROM connections;
+      INSERT INTO connections_next SELECT id, name, type, host, port, username, auth_type, database_type, database_name, database_ssl_mode, ssh_tunnel_id, credential_id, host_key_fingerprint, group_id, favorite, sort_order, last_connected_at, created_at, updated_at FROM connections;
       DROP TABLE connections;
       ALTER TABLE connections_next RENAME TO connections;
       CREATE INDEX idx_connections_group ON connections(group_id);

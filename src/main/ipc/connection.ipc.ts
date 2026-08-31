@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { createConnection } from 'node:net'
+import { stat } from 'node:fs/promises'
 import { connectionErrorCode } from '../../shared/connection'
 import type { Connection, ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestRequest, ConnectionTestResult } from '../../shared/types'
 import { CredentialService } from '../services/credentials'
@@ -13,7 +14,7 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     if (request.privateKeyPath !== undefined && typeof request.privateKeyPath !== 'string') throw appError('PRIVATE_KEY_FILE_INVALID', 'Private key file path is invalid')
     storage.validateConnection(request.connection)
     const previousCredentialId = request.connection.credentialId
-    const credentialId = request.connection.type === 'serial'
+    const credentialId = request.connection.type === 'serial' || request.connection.type === 'shell'
       ? undefined
       : request.privateKeyPath
         ? credentials.savePrivateKeyFile(request.connection.name, request.privateKeyPath, previousCredentialId)
@@ -21,7 +22,7 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
       ? credentials.save(request.connection.name, request.credential, previousCredentialId)
       : request.clearCredential ? undefined : previousCredentialId
     const connection = storage.saveConnection({ ...request.connection, credentialId })
-    if ((request.clearCredential || request.connection.type === 'serial') && previousCredentialId && !storage.hasCredentialReference(previousCredentialId)) credentials.delete(previousCredentialId)
+    if ((request.clearCredential || request.connection.type === 'serial' || request.connection.type === 'shell') && previousCredentialId && !storage.hasCredentialReference(previousCredentialId)) credentials.delete(previousCredentialId)
     return connection
   })
   ipcMain.handle('connections:delete', (_event, id: string) => {
@@ -40,7 +41,9 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     const normalized = input ? storage.validateConnection(input) : undefined
     const connection = typeof target === 'string' ? storage.getConnection(target) : normalized ? { ...normalized, id: input?.id || 'test', createdAt: 0, updatedAt: 0 } : undefined
     if (!connection) return { ok: false, code: 'CONNECTION_FAILED', message: 'Connection not found', latencyMs: 0, testedAt: Date.now() } satisfies ConnectionTestResult
-    const result = connection.type === 'serial' && testSerial
+    const result = connection.type === 'shell'
+      ? await testLocalDirectory(connection.host)
+      : connection.type === 'serial' && testSerial
       ? await testSerial(connection.host, connection.port)
       : connection.type === 'database' && testDatabase
         ? await testDatabase(connection, request?.credential)
@@ -53,6 +56,16 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     storage.deleteGroup(id)
     return { ok: true }
   })
+}
+
+async function testLocalDirectory(path: string): Promise<ConnectionTestResult> {
+  const startedAt = Date.now()
+  try {
+    const ok = (await stat(path)).isDirectory()
+    return { ok, code: ok ? 'OK' : 'CONNECTION_FAILED', message: ok ? 'Directory is available' : 'Path is not a directory', latencyMs: Date.now() - startedAt, testedAt: Date.now() }
+  } catch (error) {
+    return { ok: false, code: 'CONNECTION_FAILED', message: error instanceof Error ? error.message : 'Directory is unavailable', latencyMs: Date.now() - startedAt, testedAt: Date.now() }
+  }
 }
 
 function testTcpConnection(host: string, port: number): Promise<ConnectionTestResult> {

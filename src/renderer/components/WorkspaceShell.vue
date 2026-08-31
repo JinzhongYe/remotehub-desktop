@@ -17,13 +17,26 @@ const props = defineProps<{ shortcutModifier: string }>()
 const workspace = useWorkspaceStore()
 const connections = useConnectionStore()
 const sftpPosition = ref<SftpPosition>(normalizeSftpPosition(localStorage.getItem('remotehub.sftpPosition')))
+const sftpOpen = ref(localStorage.getItem('remotehub.sftpOpen') !== 'false')
 const workspaceContent = ref<HTMLElement | null>(null)
 const workspaceSplitX = ref(50)
 const workspaceSplitY = ref(50)
 let workspaceDrag: 'x' | 'y' | null = null
 
-onMounted(() => window.addEventListener('keydown', handleShortcut))
-onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
+onMounted(() => {
+  window.addEventListener('keydown', handleShortcut)
+  document.addEventListener('pointerdown', closeOpenMenus)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleShortcut)
+  document.removeEventListener('pointerdown', closeOpenMenus)
+})
+
+function closeOpenMenus(event: PointerEvent): void {
+  document.querySelectorAll<HTMLDetailsElement>('.tab-menu[open], .sftp-layout-menu[open]').forEach((menu) => {
+    if (!menu.contains(event.target as Node)) menu.open = false
+  })
+}
 
 function iconFor(type: string): string {
   return type === 'terminal' ? '›_' : type === 'sftp' ? '⇄' : type === 'sql' ? 'SQL' : '□'
@@ -64,6 +77,11 @@ function handleShortcut(event: KeyboardEvent): void {
 function setSftpPosition(position: SftpPosition): void {
   sftpPosition.value = position
   localStorage.setItem('remotehub.sftpPosition', position)
+}
+
+function toggleSftp(): void {
+  sftpOpen.value = !sftpOpen.value
+  localStorage.setItem('remotehub.sftpOpen', String(sftpOpen.value))
 }
 
 function setViewCount(count: WorkspaceViewCount): void {
@@ -134,7 +152,7 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
         <div v-if="connections.connections.length" class="workspace-connections">
           <button v-for="connection in connections.connections" :key="connection.id" class="workspace-connection-card" :title="t('doubleClick')" @dblclick="openConnection(connection)">
             <ConnectionIcon :connection="connection" />
-            <span><strong>{{ connection.name }}</strong><small>{{ connection.type === 'serial' ? `${connection.host} · ${connection.port} baud` : `${connection.host}:${connection.port}` }}</small></span>
+            <span><strong>{{ connection.name }}</strong><small>{{ connection.type === 'shell' ? connection.host : connection.type === 'serial' ? `${connection.host} · ${connection.port} baud` : `${connection.host}:${connection.port}` }}</small></span>
             <em>{{ connection.type === 'database' ? connection.databaseType : connection.type.toUpperCase() }}</em>
           </button>
         </div>
@@ -147,10 +165,11 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
         <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ primary: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id) }">
           <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span>{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)">×</button></div>
           <div class="workspace-pane-body">
-            <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="`sftp-${sftpPosition}`" :direction="sftpPosition === 'left' || sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="sftpPosition === 'left' || sftpPosition === 'top'" :initial="60">
-              <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" /></template>
-              <template #second><SftpPane :connection-id="tab.connectionId" embedded :position="sftpPosition" @position="setSftpPosition" /></template>
+            <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="[`sftp-${sftpPosition}`, { 'second-collapsed': !sftpOpen }]" :direction="sftpPosition === 'left' || sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="sftpPosition === 'left' || sftpPosition === 'top'" :initial="60">
+              <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="sftpOpen" @toggle-sftp="toggleSftp" /></template>
+              <template #second><SftpPane v-show="sftpOpen" :connection-id="tab.connectionId" embedded :position="sftpPosition" @position="setSftpPosition" /></template>
             </SplitPane>
+            <TerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'shell'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" local />
             <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />
             <SftpPane v-else-if="tab.type === 'sftp' && connectionFor(tab.connectionId)?.type === 'ssh'" :connection-id="tab.connectionId" />
             <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" />

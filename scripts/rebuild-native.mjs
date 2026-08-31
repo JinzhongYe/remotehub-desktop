@@ -8,7 +8,7 @@ const isWindows = process.platform === 'win32'
 
 const result = spawnSync(
   'npm',
-  ['rebuild', 'better-sqlite3'],
+  ['rebuild', 'better-sqlite3', 'node-pty'],
   {
     stdio: 'inherit',
     shell: isWindows,

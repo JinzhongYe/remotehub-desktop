@@ -28,12 +28,13 @@ const emit = defineEmits<{
 }>()
 const draggedId = ref<string>()
 const contextMenu = ref<{ connection: Connection; x: number; y: number }>()
+const collapsed = ref(false)
 
 onMounted(() => window.addEventListener('click', closeContextMenu))
 onUnmounted(() => window.removeEventListener('click', closeContextMenu))
 
 function connectionSubtitle(connection: Connection): string {
-  return connection.type === 'serial' ? `${connection.host} · ${connection.port} baud` : `${connection.host}:${connection.port}`
+  return connection.type === 'shell' ? connection.host : connection.type === 'serial' ? `${connection.host} · ${connection.port} baud` : `${connection.host}:${connection.port}`
 }
 
 function inGroup(groupId?: string): Connection[] {
@@ -73,11 +74,12 @@ function run(action: 'select' | 'sftp' | 'edit' | 'test' | 'duplicate' | 'remove
 </script>
 
 <template>
-  <aside class="explorer">
+  <aside class="explorer" :class="{ collapsed }">
     <div class="explorer-title">
-      <span>{{ t('connections') }}</span>
-      <button class="icon-button" :title="t('newConnection')" :aria-label="t('newConnection')" @click="emit('create')">＋</button>
+      <span v-if="!collapsed">{{ t('connections') }}</span>
+      <span class="explorer-actions"><button v-if="!collapsed" class="icon-button" :title="t('newConnection')" :aria-label="t('newConnection')" @click="emit('create')">＋</button><button class="icon-button" :title="t(collapsed ? 'expandConnections' : 'collapseConnections')" :aria-label="t(collapsed ? 'expandConnections' : 'collapseConnections')" @click="collapsed = !collapsed">{{ collapsed ? '»' : '«' }}</button></span>
     </div>
+    <template v-if="!collapsed">
     <label class="search-box">
       <span>⌕</span>
       <input id="connection-search" :value="search" :placeholder="t('searchConnections')" @input="emit('update:search', ($event.target as HTMLInputElement).value)">
@@ -116,5 +118,6 @@ function run(action: 'select' | 'sftp' | 'edit' | 'test' | 'duplicate' | 'remove
       <button @click="run('duplicate')">{{ t('duplicate') }}</button>
       <button class="danger" @click="run('remove')">{{ t('remove') }}</button>
     </div>
+    </template>
   </aside>
 </template>

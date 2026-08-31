@@ -12,6 +12,6 @@ const databaseIcon = computed(() => props.connection.databaseType === 'postgres'
 <template>
   <span class="connection-icon" :class="connection.type">
     <img v-if="connection.type === 'database'" :src="databaseIcon" :alt="`${connection.databaseType || 'database'} icon`">
-    <span v-else>{{ connection.type === 'serial' ? 'COM' : '›_' }}</span>
+    <span v-else>{{ connection.type === 'serial' ? 'COM' : connection.type === 'shell' ? '>_' : '›_' }}</span>
   </span>
 </template>

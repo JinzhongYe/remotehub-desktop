@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SftpEntry, SftpQueueResult, SftpTransferItem, SftpTransferStatus } from '../../shared/sftp'
-import { joinRemotePath, parentRemotePath, transferProgress } from '../../shared/sftp'
+import { fileIcon, joinRemotePath, parentRemotePath, transferProgress } from '../../shared/sftp'
 import { t } from '../i18n'
 import SplitPane from './SplitPane.vue'
 
@@ -325,11 +325,11 @@ function closeEntryMenu(): void {
           <table class="sftp-table">
             <thead><tr><th>{{ t('name') }}</th><th>{{ t('size') }}</th><th>{{ t('modified') }}</th><th>{{ t('actions') }}</th></tr></thead>
             <tbody>
-              <tr v-if="localPath && localParentPath !== localPath" class="parent-entry" @click="refreshLocal(localParentPath)"><td><span class="file-icon">▰</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
+              <tr v-if="localPath && localParentPath !== localPath" class="parent-entry" @click="refreshLocal(localParentPath)"><td><span class="file-icon">{{ fileIcon('directory') }}</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
               <tr v-if="localLoading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
               <tr v-else-if="!localEntries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
               <tr v-for="entry in localEntries" :key="entry.path" @dblclick="openLocalEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'local', entry)">
-                <td><span class="file-icon">{{ entry.type === 'directory' ? '▰' : entry.type === 'link' ? '↗' : '□' }}</span><button class="file-name" @click="openLocalEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="queueUploads([entry.path])">{{ t('upload') }}</button></td>
+                <td><span class="file-icon">{{ fileIcon(entry.type, entry.name) }}</span><button class="file-name" @click="openLocalEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="queueUploads([entry.path])">{{ t('upload') }}</button></td>
               </tr>
             </tbody>
           </table>
@@ -342,11 +342,11 @@ function closeEntryMenu(): void {
           <table class="sftp-table">
             <thead><tr><th>{{ t('name') }}</th><th>{{ t('size') }}</th><th>{{ t('modified') }}</th><th>{{ t('actions') }}</th></tr></thead>
             <tbody>
-              <tr v-if="path !== '/'" class="parent-entry" @click="refresh(parentRemotePath(path))"><td><span class="file-icon">▰</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
+              <tr v-if="path !== '/'" class="parent-entry" @click="refresh(parentRemotePath(path))"><td><span class="file-icon">{{ fileIcon('directory') }}</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
               <tr v-if="loading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
               <tr v-else-if="!entries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
               <tr v-for="entry in entries" :key="entry.path" @dblclick="openEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'remote', entry)">
-                <td><span class="file-icon">{{ entry.type === 'directory' ? '▰' : entry.type === 'link' ? '↗' : '□' }}</span><button class="file-name" @click="openEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="download(entry)">{{ t('download') }}</button><button @click="renameEntry(entry)">{{ t('rename') }}</button><button class="danger" @click="removeEntry(entry)">{{ t('remove') }}</button></td>
+                <td><span class="file-icon">{{ fileIcon(entry.type, entry.name) }}</span><button class="file-name" @click="openEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="download(entry)">{{ t('download') }}</button><button @click="renameEntry(entry)">{{ t('rename') }}</button><button class="danger" @click="removeEntry(entry)">{{ t('remove') }}</button></td>
               </tr>
             </tbody>
           </table>

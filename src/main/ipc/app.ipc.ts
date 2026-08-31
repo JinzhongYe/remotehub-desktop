@@ -62,6 +62,10 @@ export function registerAppIpc(): void {
     })
     return result.canceled ? null : result.filePaths[0] || null
   })
+  ipcMain.handle('app:chooseShellDirectory', async () => {
+    const result = await dialog.showOpenDialog({ title: 'Choose shell working directory', properties: ['openDirectory'] })
+    return result.canceled ? null : result.filePaths[0] || null
+  })
   ipcMain.handle('app:chooseUploadFiles', async () => {
     const result = await dialog.showOpenDialog({ title: 'Choose files to upload', properties: ['openFile', 'multiSelections'] })
     return result.canceled ? [] : result.filePaths

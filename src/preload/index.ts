@@ -4,6 +4,7 @@ import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
 import type { SftpTransferEvent } from '../shared/sftp'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
 import type { DatabaseCsvExport, DatabaseQueryRequest } from '../shared/database'
+import type { LocalShellDataEvent, LocalShellStatusEvent } from '../shared/local-shell'
 
 const api = {
   app: {
@@ -14,6 +15,7 @@ const api = {
     listLocalDirectory: (path?: string) => ipcRenderer.invoke('app:listLocalDirectory', path),
     choosePrivateKey: () => ipcRenderer.invoke('app:choosePrivateKey'),
     chooseDatabaseFile: () => ipcRenderer.invoke('app:chooseDatabaseFile'),
+    chooseShellDirectory: () => ipcRenderer.invoke('app:chooseShellDirectory'),
     chooseUploadFiles: () => ipcRenderer.invoke('app:chooseUploadFiles'),
     chooseUploadFolder: () => ipcRenderer.invoke('app:chooseUploadFolder'),
     chooseDownloadPath: (defaultName: string) => ipcRenderer.invoke('app:chooseDownloadPath', defaultName),
@@ -35,6 +37,8 @@ const api = {
     trustHostKey: (connectionId: string, fingerprint: string) => ipcRenderer.invoke('ssh:trustHostKey', connectionId, fingerprint),
     write: (sessionId: string, data: string) => ipcRenderer.invoke('ssh:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('ssh:resize', sessionId, cols, rows),
+    statusOverview: (sessionId: string) => ipcRenderer.invoke('ssh:statusOverview', sessionId),
+    codexStatus: (sessionId: string) => ipcRenderer.invoke('ssh:codexStatus', sessionId),
     disconnect: (sessionId: string) => ipcRenderer.invoke('ssh:disconnect', sessionId),
     onData: (listener: (event: SshDataEvent) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: SshDataEvent): void => listener(payload)
@@ -83,6 +87,23 @@ const api = {
       const handler = (_event: Electron.IpcRendererEvent, payload: SerialStatusEvent): void => listener(payload)
       ipcRenderer.on('serial:status', handler)
       return () => ipcRenderer.removeListener('serial:status', handler)
+    }
+  },
+  shell: {
+    connect: (connectionId: string) => ipcRenderer.invoke('shell:connect', connectionId),
+    write: (sessionId: string, data: string) => ipcRenderer.invoke('shell:write', sessionId, data),
+    resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('shell:resize', sessionId, cols, rows),
+    codexStatus: (sessionId: string) => ipcRenderer.invoke('shell:codexStatus', sessionId),
+    disconnect: (sessionId: string) => ipcRenderer.invoke('shell:disconnect', sessionId),
+    onData: (listener: (event: LocalShellDataEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: LocalShellDataEvent): void => listener(payload)
+      ipcRenderer.on('shell:data', handler)
+      return () => ipcRenderer.removeListener('shell:data', handler)
+    },
+    onStatus: (listener: (event: LocalShellStatusEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: LocalShellStatusEvent): void => listener(payload)
+      ipcRenderer.on('shell:status', handler)
+      return () => ipcRenderer.removeListener('shell:status', handler)
     }
   },
   database: {
