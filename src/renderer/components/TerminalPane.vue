@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Terminal } from 'xterm'
+import { Terminal, type ITheme } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 import type { SshDataEvent, SshSessionStatus, SshStatusEvent } from '../../shared/ssh'
@@ -26,8 +26,18 @@ let removeInputListener: (() => void) | undefined
 let removeSelectionListener: (() => void) | undefined
 let removeContextMenuListener: (() => void) | undefined
 let resizeObserver: ResizeObserver | undefined
+let themeObserver: MutationObserver | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
+
+const terminalThemes: Record<'dark' | 'light', ITheme> = {
+  dark: { background: '#0f1720', foreground: '#d8e1ea', cursor: '#68d6bd', selectionBackground: '#315d86', selectionForeground: '#ffffff', selectionInactiveBackground: '#24425f' },
+  light: { background: '#f8fafc', foreground: '#263445', cursor: '#1769aa', selectionBackground: '#b9d7f0', selectionForeground: '#101820', selectionInactiveBackground: '#d7e6f2' }
+}
+
+function terminalTheme(): ITheme {
+  return terminalThemes[document.documentElement.dataset.theme === 'light' ? 'light' : 'dark']
+}
 
 const statusLabel = (): string => {
   if (status.value === 'connecting') return t('connecting')
@@ -132,7 +142,7 @@ function showContextMenu(event: MouseEvent): void {
   hasSelection.value = terminal?.hasSelection() ?? false
   contextMenu.value = {
     x: Math.max(4, Math.min(event.clientX, window.innerWidth - 104)),
-    y: Math.max(4, Math.min(event.clientY, window.innerHeight - 76))
+    y: Math.max(4, Math.min(event.clientY, window.innerHeight - 106))
   }
 }
 
@@ -142,6 +152,18 @@ async function copySelection(): Promise<void> {
   if (!selection) return
   try {
     await window.api.app.copyText(selection)
+    terminal?.focus()
+  } catch (error) {
+    statusMessage.value = error instanceof Error ? error.message : t('sshUnavailable')
+  }
+}
+
+async function pasteClipboard(): Promise<void> {
+  contextMenu.value = null
+  if (!sessionId) return
+  try {
+    const text = await window.api.app.readText()
+    if (text) await window.api.ssh.write(sessionId, text)
     terminal?.focus()
   } catch (error) {
     statusMessage.value = error instanceof Error ? error.message : t('sshUnavailable')
@@ -170,19 +192,14 @@ onMounted(() => {
     cursorBlink: true,
     fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: 13,
-    theme: {
-      background: '#0a0f15',
-      foreground: '#dbe7f4',
-      cursor: '#68d6bd',
-      selectionBackground: '#315d86',
-      selectionForeground: '#ffffff',
-      selectionInactiveBackground: '#24425f'
-    },
+    theme: terminalTheme(),
     scrollback: 5000
   })
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
+  themeObserver = new MutationObserver(() => { if (terminal) terminal.options.theme = terminalTheme() })
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   resizeObserver = new ResizeObserver(() => { if (props.active) resizeTerminal() })
   resizeObserver.observe(terminalHost.value)
   removeDataListener = window.api.ssh.onData(handleData)
@@ -221,6 +238,7 @@ onBeforeUnmount(() => {
   removeSelectionListener?.()
   removeContextMenuListener?.()
   resizeObserver?.disconnect()
+  themeObserver?.disconnect()
   if (sessionId) void window.api.ssh.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
 })
@@ -242,6 +260,7 @@ onBeforeUnmount(() => {
     <div ref="terminalHost" class="terminal-host" @contextmenu.capture.prevent.stop="showContextMenu"></div>
     <div v-if="contextMenu" class="terminal-context-menu" role="menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @pointerdown.stop>
       <button role="menuitem" :disabled="!hasSelection" @click="copySelection">{{ t('copy') }}</button>
+      <button role="menuitem" :disabled="status !== 'connected'" @click="pasteClipboard">{{ t('paste') }}</button>
       <button role="menuitem" @click="selectAll">{{ t('selectAll') }}</button>
     </div>
   </section>

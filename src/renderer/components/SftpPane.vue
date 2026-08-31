@@ -3,8 +3,14 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SftpEntry, SftpQueueResult, SftpTransferItem, SftpTransferStatus } from '../../shared/sftp'
 import { joinRemotePath, parentRemotePath, transferProgress } from '../../shared/sftp'
 import { t } from '../i18n'
+import SplitPane from './SplitPane.vue'
 
-const props = defineProps<{ connectionId: string }>()
+type SftpPosition = 'right' | 'left' | 'top' | 'bottom'
+type LocalEntry = Pick<SftpEntry, 'name' | 'path' | 'type' | 'size' | 'modifiedAt'>
+type LocalDirectory = { path: string; parentPath: string; entries: LocalEntry[] }
+
+const props = defineProps<{ connectionId: string; embedded?: boolean; position?: SftpPosition }>()
+const emit = defineEmits<{ position: [position: SftpPosition] }>()
 
 const sessionId = ref('')
 const path = ref('/')
@@ -15,6 +21,13 @@ const errorMessage = ref('')
 const pendingFingerprint = ref('')
 const transfers = ref<SftpTransferItem[]>([])
 const transferPanelOpen = ref(true)
+const localPath = ref('')
+const localPathInput = ref('')
+const localParentPath = ref('')
+const localEntries = ref<LocalEntry[]>([])
+const localLoading = ref(true)
+const localError = ref('')
+const entryMenu = ref<{ side: 'local' | 'remote'; entry: LocalEntry | SftpEntry; x: number; y: number } | null>(null)
 let removeTransferListener: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
@@ -27,9 +40,9 @@ const totalBytes = computed(() => transfers.value.reduce((sum, item) => sum + it
 function transferEvent(event: SftpTransferItem): void {
   if (event.sessionId !== sessionId.value) return
   upsertTransfer(event)
-  if (event.status === 'completed' && event.direction === 'upload') {
+  if (event.status === 'completed') {
     if (refreshTimer) clearTimeout(refreshTimer)
-    refreshTimer = setTimeout(() => void refresh(), 350)
+    refreshTimer = setTimeout(() => { void refresh(); void refreshLocal() }, 350)
   }
 }
 
@@ -98,6 +111,50 @@ function openEntry(entry: SftpEntry): void {
   if (entry.type === 'directory') void refresh(entry.path)
 }
 
+async function refreshLocal(nextPath?: string): Promise<void> {
+  localLoading.value = true
+  localError.value = ''
+  try {
+    const result = await window.api.app.listLocalDirectory(nextPath || localPath.value || undefined) as LocalDirectory
+    localPath.value = result.path
+    localPathInput.value = result.path
+    localParentPath.value = result.parentPath
+    localEntries.value = result.entries
+  } catch (error) {
+    localError.value = error instanceof Error ? error.message : t('operationFailed')
+  } finally {
+    localLoading.value = false
+  }
+}
+
+function openLocalEntry(entry: LocalEntry): void {
+  if (entry.type === 'directory') void refreshLocal(entry.path)
+}
+
+async function chooseLocalDirectory(): Promise<void> {
+  const directory = await window.api.app.chooseDownloadDirectory()
+  if (directory) await refreshLocal(directory)
+}
+
+function showEntryMenu(event: MouseEvent, side: 'local' | 'remote', entry: LocalEntry | SftpEntry): void {
+  entryMenu.value = { side, entry, x: Math.max(4, Math.min(event.clientX, window.innerWidth - 150)), y: Math.max(4, Math.min(event.clientY, window.innerHeight - 128)) }
+}
+
+function runEntryAction(action: 'upload' | 'download' | 'rename' | 'remove'): void {
+  const menu = entryMenu.value
+  entryMenu.value = null
+  if (!menu) return
+  if (menu.side === 'local') void queueUploads([menu.entry.path])
+  else if (action === 'download') void download(menu.entry as SftpEntry)
+  else if (action === 'rename') void renameEntry(menu.entry as SftpEntry)
+  else if (action === 'remove') void removeEntry(menu.entry as SftpEntry)
+}
+
+function setPosition(position: SftpPosition, event: MouseEvent): void {
+  emit('position', position)
+  ;(event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')
+}
+
 async function createDirectory(): Promise<void> {
   const name = window.prompt(t('folderName'))?.trim()
   if (!name || !sessionId.value) return
@@ -155,7 +212,7 @@ function dropFiles(event: DragEvent): void {
 
 async function download(entry: SftpEntry): Promise<void> {
   if (!sessionId.value) return
-  const localDirectory = await window.api.app.chooseDownloadDirectory()
+  const localDirectory = localPath.value || await window.api.app.chooseDownloadDirectory()
   if (!localDirectory) return
   try {
     let result: SftpQueueResult = await window.api.sftp.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, false)
@@ -227,6 +284,8 @@ function canCancel(item: SftpTransferItem): boolean {
 
 onMounted(() => {
   removeTransferListener = window.api.sftp.onTransfer(transferEvent)
+  document.addEventListener('pointerdown', closeEntryMenu)
+  void refreshLocal()
   void connect()
 })
 
@@ -234,39 +293,67 @@ onBeforeUnmount(() => {
   disposed = true
   if (refreshTimer) clearTimeout(refreshTimer)
   removeTransferListener?.()
+  document.removeEventListener('pointerdown', closeEntryMenu)
   if (sessionId.value) void window.api.sftp.disconnect(sessionId.value).catch(() => undefined)
 })
+
+function closeEntryMenu(): void {
+  entryMenu.value = null
+}
 </script>
 
 <template>
   <section class="sftp-pane" @dragover.prevent @drop="dropFiles">
     <div class="sftp-toolbar">
       <span class="terminal-kind">SFTP</span>
-      <button class="toolbar-button muted" :disabled="!sessionId || path === '/'" @click="refresh(parentRemotePath(path))">↑ {{ t('parentFolder') }}</button>
-      <form class="sftp-path" @submit.prevent="refresh(pathInput)"><input v-model="pathInput" :disabled="!sessionId"><button type="submit" :disabled="!sessionId">{{ t('go') }}</button></form>
-      <button class="toolbar-button muted" :disabled="!sessionId" @click="refresh()">↻ {{ t('refresh') }}</button>
       <button class="toolbar-button" :disabled="!sessionId" @click="chooseUploadFiles">⇧ {{ t('upload') }}</button>
       <button class="toolbar-button" :disabled="!sessionId" @click="chooseUploadFolder">▰ {{ t('uploadFolder') }}</button>
       <button class="toolbar-button" :disabled="!sessionId" @click="createDirectory">＋ {{ t('newFolder') }}</button>
+      <details v-if="embedded" class="sftp-layout-menu">
+        <summary :title="t('sftpLayout')" :aria-label="t('sftpLayout')">•••</summary>
+        <div><button :class="{ active: position === 'left' }" @click="setPosition('left', $event)">← {{ t('dockLeft') }}</button><button :class="{ active: position === 'right' }" @click="setPosition('right', $event)">→ {{ t('dockRight') }}</button><button :class="{ active: position === 'top' }" @click="setPosition('top', $event)">↑ {{ t('dockTop') }}</button><button :class="{ active: position === 'bottom' }" @click="setPosition('bottom', $event)">↓ {{ t('dockBottom') }}</button></div>
+      </details>
     </div>
     <div v-if="pendingFingerprint" class="terminal-host-key"><span>{{ t('hostKeyPrompt') }}</span><code>{{ t('hostKeyFingerprint') }}: {{ pendingFingerprint }}</code><button class="toolbar-button" @click="trustHostKey">{{ t('trustHostKey') }}</button></div>
     <div v-if="errorMessage" class="sftp-error"><span>{{ errorMessage }}</span><button class="icon-button" @click="errorMessage = ''">×</button><button v-if="!sessionId" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button></div>
-    <div class="sftp-table-wrap">
-      <table class="sftp-table">
-        <thead><tr><th>{{ t('name') }}</th><th>{{ t('size') }}</th><th>{{ t('modified') }}</th><th>{{ t('actions') }}</th></tr></thead>
-        <tbody>
-          <tr v-if="loading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
-          <tr v-else-if="!entries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
-          <tr v-for="entry in entries" :key="entry.path" @dblclick="openEntry(entry)">
-            <td><span class="file-icon">{{ entry.type === 'directory' ? '▰' : entry.type === 'link' ? '↗' : '□' }}</span><button class="file-name" @click="openEntry(entry)">{{ entry.name }}</button></td>
-            <td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td>
-            <td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td>
-            <td class="file-actions"><button @click="download(entry)">{{ t('download') }}</button><button @click="renameEntry(entry)">{{ t('rename') }}</button><button class="danger" @click="removeEntry(entry)">{{ t('remove') }}</button></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="sftp-drop-hint">{{ t('dropUploadHint') }}</div>
-    </div>
+    <SplitPane class="sftp-file-split" :direction="position === 'left' || position === 'right' ? 'vertical' : 'horizontal'">
+      <template #first><section class="sftp-browser local-browser">
+        <div class="sftp-browser-title"><strong>▣ {{ t('localFiles') }}</strong><button class="text-button" @click="chooseLocalDirectory">{{ t('chooseFolder') }}</button></div>
+        <div class="sftp-browser-nav"><button :disabled="!localPath || localParentPath === localPath" @click="refreshLocal(localParentPath)">↑</button><form class="sftp-path" @submit.prevent="refreshLocal(localPathInput)"><input v-model="localPathInput"><button type="submit">{{ t('go') }}</button></form><button @click="refreshLocal()">↻</button></div>
+        <div v-if="localError" class="sftp-error"><span>{{ localError }}</span><button class="icon-button" @click="localError = ''">×</button></div>
+        <div class="sftp-table-wrap">
+          <table class="sftp-table">
+            <thead><tr><th>{{ t('name') }}</th><th>{{ t('size') }}</th><th>{{ t('modified') }}</th><th>{{ t('actions') }}</th></tr></thead>
+            <tbody>
+              <tr v-if="localPath && localParentPath !== localPath" class="parent-entry" @click="refreshLocal(localParentPath)"><td><span class="file-icon">▰</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
+              <tr v-if="localLoading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
+              <tr v-else-if="!localEntries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
+              <tr v-for="entry in localEntries" :key="entry.path" @dblclick="openLocalEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'local', entry)">
+                <td><span class="file-icon">{{ entry.type === 'directory' ? '▰' : entry.type === 'link' ? '↗' : '□' }}</span><button class="file-name" @click="openLocalEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="queueUploads([entry.path])">{{ t('upload') }}</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section></template>
+      <template #second><section class="sftp-browser remote-browser">
+        <div class="sftp-browser-title"><strong>☁ {{ t('remoteFiles') }}</strong><span>{{ entries.length }}</span></div>
+        <div class="sftp-browser-nav"><button :disabled="!sessionId || path === '/'" @click="refresh(parentRemotePath(path))">↑</button><form class="sftp-path" @submit.prevent="refresh(pathInput)"><input v-model="pathInput" :disabled="!sessionId"><button type="submit" :disabled="!sessionId">{{ t('go') }}</button></form><button :disabled="!sessionId" @click="refresh()">↻</button></div>
+        <div class="sftp-table-wrap">
+          <table class="sftp-table">
+            <thead><tr><th>{{ t('name') }}</th><th>{{ t('size') }}</th><th>{{ t('modified') }}</th><th>{{ t('actions') }}</th></tr></thead>
+            <tbody>
+              <tr v-if="path !== '/'" class="parent-entry" @click="refresh(parentRemotePath(path))"><td><span class="file-icon">▰</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
+              <tr v-if="loading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
+              <tr v-else-if="!entries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
+              <tr v-for="entry in entries" :key="entry.path" @dblclick="openEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'remote', entry)">
+                <td><span class="file-icon">{{ entry.type === 'directory' ? '▰' : entry.type === 'link' ? '↗' : '□' }}</span><button class="file-name" @click="openEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="download(entry)">{{ t('download') }}</button><button @click="renameEntry(entry)">{{ t('rename') }}</button><button class="danger" @click="removeEntry(entry)">{{ t('remove') }}</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="sftp-drop-hint">{{ t('dropUploadHint') }}</div>
+        </div>
+      </section></template>
+    </SplitPane>
     <section v-if="transfers.length" class="transfer-manager" :class="{ collapsed: !transferPanelOpen }">
       <button class="transfer-header" @click="transferPanelOpen = !transferPanelOpen">
         <span>⇅ {{ t('transferQueue') }}</span>
@@ -284,5 +371,9 @@ onBeforeUnmount(() => {
         <div class="transfer-footer"><span>{{ activeTransfers.length ? t('parallelTransfers') : t('transferIdle') }}</span><button v-if="finishedTransfers.length" class="text-button" @click="clearFinished">{{ t('clearFinished') }}</button></div>
       </template>
     </section>
+    <div v-if="entryMenu" class="sftp-context-menu" :style="{ left: `${entryMenu.x}px`, top: `${entryMenu.y}px` }" @pointerdown.stop>
+      <button v-if="entryMenu.side === 'local'" @click="runEntryAction('upload')">⇧ {{ t('upload') }}</button>
+      <template v-else><button @click="runEntryAction('download')">⇩ {{ t('download') }}</button><button @click="runEntryAction('rename')">{{ t('rename') }}</button><button class="danger" @click="runEntryAction('remove')">{{ t('remove') }}</button></template>
+    </div>
   </section>
 </template>

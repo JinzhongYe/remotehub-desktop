@@ -251,10 +251,11 @@ export class StorageService {
     this.db?.close()
   }
 
-  validateConnection(input: ConnectionInput): void {
+  validateConnection(input: ConnectionInput): ReturnType<typeof normalizeConnection> {
     const normalized = normalizeConnection(input)
     if (input.id && (typeof input.id !== 'string' || input.id.length > 100)) throw appError('INVALID_CONNECTION_ID', 'Connection identifier is invalid')
     if (normalized.groupId && !this.listGroups().some((group) => group.id === normalized.groupId)) throw appError('GROUP_NOT_FOUND', 'Group not found')
+    return normalized
   }
 
   private nextConnectionOrder(): number {

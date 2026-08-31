@@ -8,6 +8,7 @@ import { useWorkspaceStore } from '../stores/workspace'
 import type { Connection, ConnectionInput } from '../../shared/types'
 import type { Group } from '../../shared/types'
 import { locale, t, toggleLocale } from '../i18n'
+import appIcon from '../../../assets/remotehub.png'
 
 const connectionStore = useConnectionStore()
 const workspace = useWorkspaceStore()
@@ -23,8 +24,20 @@ const statusValues = ref<Record<string, string | number>>({})
 const statusError = ref('')
 const statusText = computed(() => statusError.value || t(statusKey.value, statusValues.value))
 const shortcutModifier = computed(() => appInfo.value?.platform === 'darwin' ? '⌘' : 'Ctrl')
+type Theme = 'light' | 'dark'
+const savedTheme = localStorage.getItem('remotehub.theme')
+const theme = ref<Theme>(savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+document.documentElement.dataset.theme = theme.value
+
+function toggleTheme(): void {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  document.documentElement.dataset.theme = theme.value
+  localStorage.setItem('remotehub.theme', theme.value)
+  if (window.api) void window.api.app.setTheme(theme.value).catch(() => undefined)
+}
 
 onMounted(async () => {
+  if (window.api) void window.api.app.setTheme(theme.value).catch(() => undefined)
   try {
     await connectionStore.load()
     workspace.restore(connectionStore.connections.map((connection) => connection.id))
@@ -161,9 +174,9 @@ async function removeGroup(group: Group): Promise<void> {
 <template>
   <div class="app-frame" :class="{ darwin: appInfo?.platform === 'darwin' }">
     <header class="top-toolbar">
-      <div class="brand"><span class="brand-mark">RH</span><div><strong>RemoteHub</strong><small>DESKTOP WORKBENCH</small></div></div>
-      <div class="toolbar-context"><span class="toolbar-label">{{ t('workspace') }}</span><span class="toolbar-separator">/</span><span>{{ connectionStore.selected?.name || t('noSelection') }}</span></div>
-      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button><span class="window-pill">Phase 9</span></div>
+      <div class="brand"><img class="brand-mark" :src="appIcon" alt=""><div><strong>RemoteHub</strong><small>DESKTOP WORKBENCH</small></div></div>
+      <div class="toolbar-context"><button class="toolbar-label" @click="workspace.activate('welcome')">{{ t('workspace') }}</button><span class="toolbar-separator">/</span><span>{{ connectionStore.selected?.name || t('noSelection') }}</span></div>
+      <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted theme-toggle" :title="theme === 'dark' ? t('lightMode') : t('darkMode')" :aria-label="theme === 'dark' ? t('lightMode') : t('darkMode')" @click="toggleTheme">{{ theme === 'dark' ? '☀' : '☾' }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button></div>
     </header>
     <div class="app-body">
       <ConnectionExplorer :connections="connectionStore.filteredConnections" :recent-connections="connectionStore.recentConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />

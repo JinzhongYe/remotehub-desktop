@@ -30,12 +30,12 @@ export class DatabaseService {
     return { sessionId, adapter: adapter.type, database: adapter.database, serverVersion: adapter.serverVersion }
   }
 
-  async test(connection: Connection): Promise<ConnectionTestResult> {
+  async test(connection: Connection, credential?: string): Promise<ConnectionTestResult> {
     const startedAt = Date.now()
     let adapter: DatabaseAdapter | undefined
     try {
       if (connection.type !== 'database') throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Database adapter is not available')
-      adapter = await this.connectAdapter(connection)
+      adapter = await this.connectAdapter(connection, credential)
       await adapter.ping()
       return { ok: true, code: 'OK', message: `${adapter.type === 'postgres' ? 'PostgreSQL authentication' : adapter.type === 'mysql' ? 'MySQL authentication' : 'SQLite file'} succeeded`, latencyMs: Date.now() - startedAt, testedAt: Date.now() }
     } catch (error) {
@@ -93,13 +93,13 @@ export class DatabaseService {
     return session
   }
 
-  private async connectAdapter(connection: Connection): Promise<DatabaseAdapter> {
+  private async connectAdapter(connection: Connection, credential?: string): Promise<DatabaseAdapter> {
     const factory = connection.databaseType === 'mysql' ? this.mysqlFactory : connection.databaseType === 'postgres' ? this.postgresFactory : connection.databaseType === 'sqlite' ? this.sqliteFactory : undefined
     if (!factory) throw appError('DATABASE_ADAPTER_UNAVAILABLE', 'Database adapter is not available in this phase')
-    if (!connection.sshTunnelId) return factory.connect(connection, this.credentials.get(connection.credentialId))
+    if (!connection.sshTunnelId) return factory.connect(connection, credential ?? this.credentials.get(connection.credentialId))
     const tunnelConnection = this.storage.getConnection(connection.sshTunnelId)
     if (!tunnelConnection || tunnelConnection.type !== 'ssh') throw appError('DATABASE_TUNNEL_INVALID', 'Selected SSH tunnel connection does not exist')
-    return factory.connect(connection, this.credentials.get(connection.credentialId), {
+    return factory.connect(connection, credential ?? this.credentials.get(connection.credentialId), {
       connection: tunnelConnection,
       credential: this.credentials.get(tunnelConnection.credentialId)
     })

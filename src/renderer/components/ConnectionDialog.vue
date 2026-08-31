@@ -14,6 +14,10 @@ const clearCredential = ref(false)
 const privateKeyPath = ref('')
 const serialPorts = ref<SerialPortInfo[]>([])
 const serialPortsError = ref('')
+const connectionForm = ref<HTMLFormElement>()
+const testing = ref(false)
+const testMessage = ref('')
+const testSucceeded = ref(false)
 
 watch(() => [props.open, props.connection], () => {
   const item = props.connection
@@ -35,11 +39,33 @@ watch(() => [props.open, props.connection], () => {
   credential.value = ''
   clearCredential.value = false
   privateKeyPath.value = ''
+  testMessage.value = ''
+  testSucceeded.value = false
   if (props.open && form.type === 'serial') void loadSerialPorts()
 }, { immediate: true })
 
 function submit(): void {
-  emit('save', { ...form, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim(), authType: form.type === 'database' ? form.databaseType === 'sqlite' ? undefined : 'password' : form.authType }, credential.value || undefined, clearCredential.value, form.type === 'ssh' ? privateKeyPath.value || undefined : undefined)
+  emit('save', connectionInput(), credential.value || undefined, clearCredential.value, form.type === 'ssh' ? privateKeyPath.value || undefined : undefined)
+}
+
+function connectionInput(): ConnectionInput {
+  return { ...form, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim(), authType: form.type === 'database' ? form.databaseType === 'sqlite' ? undefined : 'password' : form.authType }
+}
+
+async function testConnection(): Promise<void> {
+  if (!connectionForm.value?.reportValidity()) return
+  testing.value = true
+  testMessage.value = ''
+  try {
+    const result = await window.api.connections.test({ connection: connectionInput(), credential: credential.value || undefined })
+    testSucceeded.value = result.ok
+    testMessage.value = result.ok ? t('testOk', { latency: result.latencyMs }) : t('testFailed', { code: result.code })
+  } catch (error) {
+    testSucceeded.value = false
+    testMessage.value = error instanceof Error ? error.message : t('testFailed', { code: 'CONNECTION_FAILED' })
+  } finally {
+    testing.value = false
+  }
 }
 
 function changeType(): void {
@@ -88,7 +114,7 @@ async function chooseDatabaseFile(): Promise<void> {
 
 <template>
   <div v-if="open" class="modal-layer" @click.self="emit('close')">
-    <form class="connection-dialog" @submit.prevent="submit">
+    <form ref="connectionForm" class="connection-dialog" @submit.prevent="submit">
       <div class="dialog-heading">
         <div><span class="eyebrow">{{ t('connectionAsset') }}</span><h2>{{ connection ? t('editConnection') : t('newConnection') }}</h2></div>
         <button type="button" class="icon-button" :aria-label="t('cancel')" @click="emit('close')">×</button>
@@ -114,7 +140,8 @@ async function chooseDatabaseFile(): Promise<void> {
       <label class="favorite-check"><input v-model="form.favorite" type="checkbox"><span>{{ t('favorite') }}</span></label>
       <label v-if="connection?.credentialId && form.type !== 'serial' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="favorite-check"><input v-model="clearCredential" type="checkbox"><span>{{ t('clearCredential') }}</span></label>
       <p v-if="form.type !== 'serial' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="dialog-note">{{ t('credentialNote') }}</p>
-      <div class="dialog-actions"><button type="button" class="button secondary" @click="emit('close')">{{ t('cancel') }}</button><button type="submit" class="button primary">{{ t('saveConnection') }}</button></div>
+      <p v-if="testMessage" class="connection-test-result" :class="{ success: testSucceeded }" role="status">{{ testMessage }}</p>
+      <div class="dialog-actions"><button type="button" class="button secondary" @click="emit('close')">{{ t('cancel') }}</button><button v-if="!connection" type="button" class="button secondary" :disabled="testing" @click="testConnection">{{ testing ? t('connecting') : t('test') }}</button><button type="submit" class="button primary">{{ t('saveConnection') }}</button></div>
     </form>
   </div>
 </template>

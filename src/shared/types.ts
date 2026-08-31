@@ -69,6 +69,11 @@ export interface ConnectionTestResult {
   testedAt: number
 }
 
+export interface ConnectionTestRequest {
+  connection: ConnectionInput
+  credential?: string
+}
+
 export interface AppInfo {
   name: string
   version: string

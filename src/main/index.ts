@@ -27,6 +27,7 @@ function createWindow(): void {
     minWidth: 1040,
     minHeight: 680,
     backgroundColor: '#000000',
+    icon: join(__dirname, '..', '..', 'assets', 'remotehub.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     ...(process.platform === 'darwin' ? {} : { titleBarOverlay: { color: '#000000', symbolColor: '#f7f9fc', height: 48 } }),
     title: 'RemoteHub',

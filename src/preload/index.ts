@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { ConnectionOrderItem, ConnectionSaveRequest } from '../shared/types'
+import type { ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestRequest } from '../shared/types'
 import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
 import type { SftpTransferEvent } from '../shared/sftp'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
@@ -9,6 +9,9 @@ const api = {
   app: {
     getInfo: () => ipcRenderer.invoke('app:getInfo'),
     copyText: (text: string) => ipcRenderer.invoke('app:copyText', text),
+    readText: () => ipcRenderer.invoke('app:readText'),
+    setTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('app:setTheme', theme),
+    listLocalDirectory: (path?: string) => ipcRenderer.invoke('app:listLocalDirectory', path),
     choosePrivateKey: () => ipcRenderer.invoke('app:choosePrivateKey'),
     chooseDatabaseFile: () => ipcRenderer.invoke('app:chooseDatabaseFile'),
     chooseUploadFiles: () => ipcRenderer.invoke('app:chooseUploadFiles'),
@@ -25,7 +28,7 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke('connections:delete', id),
     duplicate: (id: string) => ipcRenderer.invoke('connections:duplicate', id),
     reorder: (items: ConnectionOrderItem[]) => ipcRenderer.invoke('connections:reorder', items),
-    test: (id: string) => ipcRenderer.invoke('connections:test', id)
+    test: (target: string | ConnectionTestRequest) => ipcRenderer.invoke('connections:test', target)
   },
   ssh: {
     connect: (connectionId: string) => ipcRenderer.invoke('ssh:connect', connectionId),

@@ -32,7 +32,12 @@ const cellDataMessages = {
   en: { showFullData: 'Show full data', cellDetail: 'Full cell data' }
 } as const
 
-type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en
+const connectionUiMessages = {
+  'zh-CN': { allConnections: '全部连接（双击进入）', connect: '连接', paste: '粘贴', lightMode: '日间模式', darkMode: '夜间模式', localFiles: '本地', remoteFiles: '远程', chooseFolder: '选择文件夹', sftpLayout: 'SFTP 停靠位置', dockRight: '靠右', dockLeft: '靠左', dockTop: '上方', dockBottom: '下方' },
+  en: { allConnections: 'All connections (double-click to open)', connect: 'Connect', paste: 'Paste', lightMode: 'Light mode', darkMode: 'Dark mode', localFiles: 'Local', remoteFiles: 'Remote', chooseFolder: 'Choose folder', sftpLayout: 'SFTP dock position', dockRight: 'Right', dockLeft: 'Left', dockTop: 'Top', dockBottom: 'Bottom' }
+} as const
+
+type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en | keyof typeof connectionUiMessages.en
 
 const stored = localStorage.getItem('remotehub.locale')
 export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
@@ -41,8 +46,9 @@ export function t(key: MessageKey, values: Record<string, string | number> = {})
   const overrides = phase6Messages[locale.value] as Record<string, string>
   const multiView = multiViewMessages[locale.value] as Record<string, string>
   const cellData = cellDataMessages[locale.value] as Record<string, string>
+  const connectionUi = connectionUiMessages[locale.value] as Record<string, string>
   const defaults = messages[locale.value] as Record<string, string>
-  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), connectionUi[key] || cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
 }
 
 export function toggleLocale(): void {
