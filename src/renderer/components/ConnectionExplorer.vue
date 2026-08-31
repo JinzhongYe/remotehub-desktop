@@ -23,6 +23,8 @@ const emit = defineEmits<{
   test: [connection: Connection]
   move: [id: string, beforeId?: string, groupId?: string]
   createGroup: []
+  importConnections: []
+  exportConnections: []
   editGroup: [group: Group]
   removeGroup: [group: Group]
 }>()
@@ -77,7 +79,7 @@ function run(action: 'select' | 'sftp' | 'edit' | 'test' | 'duplicate' | 'remove
   <aside class="explorer" :class="{ collapsed }">
     <div class="explorer-title">
       <span v-if="!collapsed">{{ t('connections') }}</span>
-      <span class="explorer-actions"><button v-if="!collapsed" class="icon-button" :title="t('newConnection')" :aria-label="t('newConnection')" @click="emit('create')">＋</button><button class="icon-button" :title="t(collapsed ? 'expandConnections' : 'collapseConnections')" :aria-label="t(collapsed ? 'expandConnections' : 'collapseConnections')" @click="collapsed = !collapsed">{{ collapsed ? '»' : '«' }}</button></span>
+      <span class="explorer-actions"><button v-if="!collapsed" class="icon-button" :title="t('importConnections')" :aria-label="t('importConnections')" @click="emit('importConnections')">⇩</button><button v-if="!collapsed" class="icon-button" :title="t('exportConnections')" :aria-label="t('exportConnections')" @click="emit('exportConnections')">⇧</button><button v-if="!collapsed" class="icon-button" :title="t('newConnection')" :aria-label="t('newConnection')" @click="emit('create')">＋</button><button class="icon-button" :title="t(collapsed ? 'expandConnections' : 'collapseConnections')" :aria-label="t(collapsed ? 'expandConnections' : 'collapseConnections')" @click="collapsed = !collapsed">{{ collapsed ? '»' : '«' }}</button></span>
     </div>
     <template v-if="!collapsed">
     <label class="search-box">

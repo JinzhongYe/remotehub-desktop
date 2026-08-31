@@ -125,6 +125,20 @@ async function duplicateConnection(connection: Connection): Promise<void> {
   }
 }
 
+async function importConnections(): Promise<void> {
+  try {
+    const result = await connectionStore.importConnections()
+    if (!result.canceled) setStatus('importedConnections', { count: result.count })
+  } catch (error) { setError(error, 'importFailed') }
+}
+
+async function exportConnections(): Promise<void> {
+  try {
+    const result = await connectionStore.exportConnections()
+    if (!result.canceled) setStatus('exportedConnections', { count: result.count })
+  } catch (error) { setError(error, 'exportFailed') }
+}
+
 async function testConnection(connection: Connection): Promise<void> {
   try {
     const result = await connectionStore.test(connection.id)
@@ -179,7 +193,7 @@ async function removeGroup(group: Group): Promise<void> {
       <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted theme-toggle" :title="theme === 'dark' ? t('lightMode') : t('darkMode')" :aria-label="theme === 'dark' ? t('lightMode') : t('darkMode')" @click="toggleTheme">{{ theme === 'dark' ? '☀' : '☾' }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button></div>
     </header>
     <div class="app-body">
-      <ConnectionExplorer :connections="connectionStore.filteredConnections" :recent-connections="connectionStore.recentConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
+      <ConnectionExplorer :connections="connectionStore.filteredConnections" :recent-connections="connectionStore.recentConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @import-connections="importConnections" @export-connections="exportConnections" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
       <main class="main-workspace"><WorkspaceShell :shortcut-modifier="shortcutModifier" /></main>
     </div>
     <footer class="status-bar"><span class="status-item"><span class="status-dot"></span>{{ statusText }}</span><span class="status-item">{{ appInfo?.platform || 'desktop' }} · {{ t('localOnly') }}</span><span class="status-item version">{{ appInfo?.version ? `v${appInfo.version}` : 'v0.1.0' }}</span></footer>

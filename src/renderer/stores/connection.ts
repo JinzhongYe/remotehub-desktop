@@ -44,6 +44,16 @@ export const useConnectionStore = defineStore('connections', () => {
     selectedId.value = item.id
   }
 
+  async function importConnections(): Promise<{ canceled: boolean; count: number }> {
+    const result = await window.api.connections.import()
+    if (!result.canceled) await load()
+    return result
+  }
+
+  function exportConnections(): Promise<{ canceled: boolean; count: number }> {
+    return window.api.connections.export()
+  }
+
   async function move(id: string, beforeId?: string, groupId?: string): Promise<void> {
     const previous = [...connections.value]
     const items = connections.value.map((item) => ({ ...item }))
@@ -99,5 +109,5 @@ export const useConnectionStore = defineStore('connections', () => {
     if (item) item.lastConnectedAt = Date.now()
   }
 
-  return { connections, groups, selectedId, search, loading, filteredConnections, selected, recentConnections, load, save, remove, duplicate, move, test, saveGroup, deleteGroup, select, markRecent }
+  return { connections, groups, selectedId, search, loading, filteredConnections, selected, recentConnections, load, save, remove, duplicate, importConnections, exportConnections, move, test, saveGroup, deleteGroup, select, markRecent }
 })
