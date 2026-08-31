@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "io.github.cb-gif.remotehub-desktop",
+  "productName": "RemoteHub Desktop",
+  "directories": { "output": "release" },
+  "files": ["dist/**/*", "dist-electron/**/*", "package.json", "!**/*.map"],
+  "asar": true,
+  "asarUnpack": ["**/*.node", "node_modules/better-sqlite3/**", "node_modules/@serialport/bindings-cpp/**"],
+  "npmRebuild": true,
+  "nativeRebuilder": "sequential",
+  "publish": null,
+  "win": { "target": ["nsis", "portable"] },
+  "nsis": {
+    "artifactName": "RemoteHub-Desktop-${version}-win-${arch}-setup.${ext}",
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "deleteAppDataOnUninstall": false
+  },
+  "portable": { "artifactName": "RemoteHub-Desktop-${version}-win-${arch}-portable.${ext}" },
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.developer-tools",
+    "artifactName": "RemoteHub-Desktop-${version}-mac-${arch}.${ext}"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "category": "Development",
+    "executableName": "remotehub-desktop",
+    "artifactName": "RemoteHub-Desktop-${version}-linux-${arch}.${ext}"
+  }
+}

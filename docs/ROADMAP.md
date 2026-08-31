@@ -72,7 +72,11 @@
 - 支持 `Ctrl/⌘ + T/W/Shift+W/Tab/1–9/\` 标签与分屏快捷键。
 - 最近打开的五个连接即时显示在 Connection Explorer。
 
-## Phase 10 — 发布
+## Phase 10 — 发布（发布管线已实现，预发布验收中）
 
-- Windows 10/11 EXE、macOS DMG、Linux AppImage。
-- 每个 Phase 都必须通过 lint、typecheck、tests、build，并完成真实连接验收。
+- electron-builder：Windows 10/11 x64 安装/免安装 EXE、macOS Intel/Apple Silicon DMG、Linux x64 AppImage。
+- npm 原生依赖重建、运行时文件白名单与 ASAR native 解包；保持既有用户数据目录。
+- 离线启动、打包程序冒烟测试（Renderer/preload/SQLite/串口模块）、版本标签校验、SHA-256 校验文件。
+- GitHub Actions 四目标构建，全部校验通过后才创建预发布；普通提交运行代码检查。
+- 尚待完成：签名/公证、干净系统安装回归、真实 SSH/SFTP/数据库/串口设备验收，详见 `docs/RELEASING.md`。
+- 每个 Phase 都必须通过 lint、typecheck、tests、build；真实连接验收未完成前不宣称稳定发布完成。

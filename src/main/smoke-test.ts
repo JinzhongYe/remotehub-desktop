@@ -1,0 +1,33 @@
+import { app, type BrowserWindow } from 'electron'
+import Database from 'better-sqlite3'
+import { SerialPort } from 'serialport'
+import { join } from 'node:path'
+
+// Explicit test mode only. No saved connections or real remote endpoints are used.
+export async function runPackagedSmokeTest(window: BrowserWindow, directory: string): Promise<Record<string, unknown>> {
+  if (!app.isPackaged) throw new Error('Smoke test requires a packaged application')
+  const filename = join(directory, 'smoke.sqlite')
+  const client = new Database(filename)
+  try {
+    client.exec('CREATE TABLE sample (value TEXT NOT NULL)')
+    client.prepare('INSERT INTO sample VALUES (?)').run('{"release":true,"nested":[1,2]}')
+  } finally { client.close() }
+  // Construction loads the native serial binding without opening any hardware.
+  const port = new SerialPort({ path: 'remotehub-smoke-unused', baudRate: 9600, autoOpen: false })
+  if (port.isOpen) throw new Error('Smoke test must not open serial hardware')
+  const report = await window.webContents.executeJavaScript(`(async () => {
+    if (location.protocol !== 'file:') throw new Error('Renderer must load offline');
+    if (!document.querySelector('.workspace-shell')) throw new Error('Workspace did not render');
+    if (typeof window.require !== 'undefined') throw new Error('Node integration exposed');
+    const info = await window.api.app.getInfo();
+    const group = await window.api.groups.save('Packaged smoke');
+    const connection = await window.api.connections.save({connection:{name:'Smoke SQLite',type:'database',databaseType:'sqlite',host:${JSON.stringify(filename)},port:1,groupId:group.id}});
+    const session = await window.api.database.connect(connection.id);
+    try {
+      const result = await window.api.database.query(session.sessionId, {sql:'SELECT value FROM sample',page:0,pageSize:200});
+      if (result.rows?.[0]?.[0] !== '{"release":true,"nested":[1,2]}') throw new Error('SQLite IPC query failed');
+    } finally { await window.api.database.disconnect(session.sessionId); }
+    return {ok:true,version:info.version,platform:info.platform,offline:true,preload:true,sqlite:true,serialBinding:true};
+  })()`)
+  return report as Record<string, unknown>
+}
