@@ -680,10 +680,18 @@ onBeforeUnmount(() => {
 <template>
   <section class="database-pane">
     <header class="database-toolbar">
-      <select v-if="!isPostgres" v-model="selectedDatabase" :disabled="!sessionId || connecting || running" @change="changeDatabase">
-        <option v-if="!databases.length" value="">{{ t('noDatabase') }}</option>
-        <option v-for="database in databases" :key="database.name" :value="database.name">{{ database.name }}{{ database.system ? ` · ${t('systemDatabase')}` : '' }}</option>
-      </select>
+      <div class="database-identity">
+        <span class="database-engine">{{ connection?.databaseType?.toUpperCase() }}</span>
+        <span class="database-identity-copy"><strong>{{ connection?.name }}</strong><small>{{ connection?.host }}<template v-if="connection?.port">:{{ connection.port }}</template></small></span>
+      </div>
+      <label v-if="!isPostgres" class="database-selector">
+        <span>{{ t('defaultDatabase') }}</span>
+        <select v-model="selectedDatabase" :disabled="!sessionId || connecting || running" @change="changeDatabase">
+          <option v-if="!databases.length" value="">{{ t('noDatabase') }}</option>
+          <option v-for="database in databases" :key="database.name" :value="database.name">{{ database.name }}{{ database.system ? ` · ${t('systemDatabase')}` : '' }}</option>
+        </select>
+      </label>
+      <span class="database-connection-state" :class="{ online: Boolean(sessionId) }"><i></i>{{ connecting ? t('connecting') : sessionId ? t('connected') : t('closed') }}</span>
       <button v-if="!sessionId && !connecting" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button>
     </header>
     <div v-if="errorMessage" class="database-error"><span>{{ errorMessage }}</span><button class="icon-button" @click="errorMessage = ''">×</button></div>
@@ -728,11 +736,11 @@ onBeforeUnmount(() => {
       </aside>
       <div v-if="!schemaCollapsed" class="schema-resizer" role="separator" tabindex="0" aria-orientation="vertical" :aria-valuemin="180" :aria-valuemax="520" :aria-valuenow="Math.round(schemaWidth)" @pointerdown.prevent="startSchemaResize" @pointermove="resizeSchema" @pointerup="stopSchemaResize" @pointercancel="stopSchemaResize" @keydown="resizeSchemaWithKeyboard"></div>
       <main class="sql-workspace">
-        <nav class="database-tabs">
-          <button :class="{ active: workspaceMode === 'home' }" @click="workspaceMode = 'home'">▦ {{ t('tableList') }}</button>
-          <button :class="{ active: workspaceMode === 'sql' }" @click="openSqlEditor">⌁ {{ t('sqlEditor') }}</button>
-          <div v-for="table in openedTables" :key="`data:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'table' && activeTableName === tableKey(table) }" @contextmenu="showTabContextMenu($event, 'table', table)"><button @click="activateTable(table)">▦ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeTable(table)">×</button></div>
-          <div v-for="table in openedStructures" :key="`structure:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'structure' && activeTableName === tableKey(table) }" @contextmenu="showTabContextMenu($event, 'structure', table)"><button @click="activateStructure(table)">▤ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeStructure(table)">×</button></div>
+        <nav class="database-tabs" role="tablist">
+          <button role="tab" :aria-selected="workspaceMode === 'home'" :class="{ active: workspaceMode === 'home' }" @click="workspaceMode = 'home'">▦ {{ t('tableList') }}</button>
+          <button role="tab" :aria-selected="workspaceMode === 'sql'" :class="{ active: workspaceMode === 'sql' }" @click="openSqlEditor">⌁ {{ t('sqlEditor') }}</button>
+          <div v-for="table in openedTables" :key="`data:${tableKey(table)}`" role="presentation" class="database-table-tab" :class="{ active: workspaceMode === 'table' && activeTableName === tableKey(table) }" @contextmenu="showTabContextMenu($event, 'table', table)"><button role="tab" :aria-selected="workspaceMode === 'table' && activeTableName === tableKey(table)" @click="activateTable(table)">▦ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeTable(table)">×</button></div>
+          <div v-for="table in openedStructures" :key="`structure:${tableKey(table)}`" role="presentation" class="database-table-tab" :class="{ active: workspaceMode === 'structure' && activeTableName === tableKey(table) }" @contextmenu="showTabContextMenu($event, 'structure', table)"><button role="tab" :aria-selected="workspaceMode === 'structure' && activeTableName === tableKey(table)" @click="activateStructure(table)">▤ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeStructure(table)">×</button></div>
         </nav>
         <section v-if="workspaceMode === 'home'" class="database-home">
           <div class="database-home-toolbar">

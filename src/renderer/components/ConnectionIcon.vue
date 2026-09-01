@@ -4,14 +4,16 @@ import type { Connection } from '../../shared/types'
 import mysqlIcon from '../assets/mysql.svg'
 import postgresIcon from '../assets/postgresql.svg'
 import sqliteIcon from '../assets/sqlite.svg'
+import UiIcon from './UiIcon.vue'
 
 const props = defineProps<{ connection: Connection }>()
 const databaseIcon = computed(() => props.connection.databaseType === 'postgres' ? postgresIcon : props.connection.databaseType === 'sqlite' ? sqliteIcon : mysqlIcon)
+const connectionGlyph = computed(() => props.connection.type === 'shell' ? 'command' : props.connection.type === 'ftp' ? 'transfer' : props.connection.type === 'serial' ? 'terminal' : 'terminal')
 </script>
 
 <template>
-  <span class="connection-icon" :class="connection.type">
-    <img v-if="connection.type === 'database'" :src="databaseIcon" :alt="`${connection.databaseType || 'database'} icon`">
-    <span v-else>{{ connection.type === 'serial' ? 'COM' : connection.type === 'shell' ? '>_' : connection.type === 'ftp' ? 'FTP' : '›_' }}</span>
+  <span class="connection-icon" :class="connection.type" aria-hidden="true">
+    <img v-if="connection.type === 'database'" :src="databaseIcon" alt="">
+    <UiIcon v-else :name="connectionGlyph" :size="15" />
   </span>
 </template>
