@@ -1,33 +1,40 @@
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/noto-sans-sc/400.css";
+@import "@fontsource/noto-sans-sc/500.css";
+@import "@fontsource/noto-sans-sc/600.css";
+
 :root {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: #f5f7fa;
+  font-family: "JetBrains Mono", "Noto Sans SC", serif;
+  color: #eee;
   background: #000;
   color-scheme: dark;
   font-synthesis: none;
   --bg: #000;
-  --panel: #0b0b0b;
-  --panel-2: #141414;
-  --panel-3: #080808;
-  --line: #30343a;
-  --line-soft: #202328;
-  --text: #f5f7fa;
-  --muted: #bec6d0;
-  --subtle: #929ca8;
+  --panel: #111315;
+  --panel-2: #17191c;
+  --panel-3: #0d0f11;
+  --line: #34373b;
+  --line-soft: #24272b;
+  --text: #eee;
+  --muted: #ccc;
+  --subtle: #999;
   --blue: #80b7ff;
   --green: #79d9ad;
   --red: #ff8e98;
   --yellow: #f4c978;
-  --surface: #111821;
-  --surface-raised: #151d26;
-  --hover: #1b2530;
-  --input: #0b1016;
-  --menu: #1b2430;
-  --terminal-bg: #0f1720;
-  --terminal-row: rgba(128, 183, 255, .035);
+  --surface: #17191c;
+  --surface-raised: #1d2023;
+  --hover: #25282c;
+  --input: #111315;
+  --menu: #202327;
+  --terminal-bg: #1a1b1d;
+  --terminal-row: #202124;
 }
 
 :root[data-theme='light'] {
-  color: #182230;
+  color: #000000;
   background: #edf1f5;
   color-scheme: light;
   --bg: #edf1f5;
@@ -36,9 +43,9 @@
   --panel-3: #e7ecf1;
   --line: #c8d0d9;
   --line-soft: #dce2e8;
-  --text: #182230;
-  --muted: #4f5e6e;
-  --subtle: #718091;
+  --text: #000000;
+  --muted: #20242a;
+  --subtle: #3f4752;
   --blue: #1769aa;
   --green: #167454;
   --red: #b52a3a;
@@ -48,13 +55,14 @@
   --hover: #e3eaf1;
   --input: #ffffff;
   --menu: #ffffff;
-  --terminal-bg: #f8fafc;
+  --terminal-bg: #ffffff;
   --terminal-row: rgba(23, 105, 170, .045);
 }
 
-* { box-sizing: border-box; font-weight: 1000; }
+* { box-sizing: border-box; }
 html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-body { background: var(--bg); font-size: 14px; }
+html { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body { background: var(--bg); font-size: 14px; font-weight: 400; }
 .visually-hidden { display: none; }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
@@ -66,7 +74,7 @@ button:disabled { cursor: default; opacity: .7; }
 .top-toolbar button, .top-toolbar select, .top-toolbar input { -webkit-app-region: no-drag; }
 .brand { display: flex; align-items: center; gap: 9px; width: 236px; }
 .brand-mark { display: block; width: 25px; height: 25px; border-radius: 7px; object-fit: cover; }
-.brand strong { display: block; color: #fff; font-size: 15px; letter-spacing: -.2px; }
+.brand strong { display: block; color: var(--text); font-size: 15px; letter-spacing: -.2px; }
 .brand small { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; letter-spacing: 1.2px; }
 .toolbar-context { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 13px; }
 .toolbar-label, .eyebrow { color: var(--green); font-size: 11px; letter-spacing: 1.5px; }
@@ -82,7 +90,7 @@ button:disabled { cursor: default; opacity: .7; }
 .app-body { display: flex; min-height: 0; flex: 1; }
 .explorer { display: flex; width: 260px; min-width: 190px; max-width: 50vw; flex: 0 0 auto; flex-direction: column; overflow: hidden; resize: horizontal; border-right: 1px solid var(--line); background: #080808; }
 .explorer.collapsed { width: 44px !important; min-width: 44px; resize: none; }
-.explorer-title { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px 8px; color: #f0f4f8; font-weight: 650; }
+.explorer-title { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px 8px; color: var(--text); font-weight: 650; }
 .explorer.collapsed .explorer-title { justify-content: center; padding-inline: 0; }
 .explorer-actions { display: flex; align-items: center; }
 .icon-button { border: 0; color: var(--muted); background: transparent; font-size: 19px; line-height: 1; }
@@ -117,7 +125,7 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .connection-icon.serial { color: var(--yellow); background: rgba(244,201,120,.1); font-size: 8px; }
 .connection-icon.shell { color: var(--blue); background: rgba(128,183,255,.1); }
 .connection-copy { min-width: 0; flex: 1; }
-.connection-copy strong { display: block; overflow: hidden; color: #fff; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.connection-copy strong { display: block; overflow: hidden; color: var(--text); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .connection-copy small { display: block; overflow: hidden; margin-top: 3px; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .favorite { color: var(--yellow); font-size: 11px; }
 .connection-context-menu { position: fixed; z-index: 60; width: 170px; padding: 5px; border: 1px solid #3b4958; border-radius: 6px; background: #161e28; box-shadow: 0 12px 32px rgba(0,0,0,.55); }
@@ -308,9 +316,9 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .field { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; }
 .field.wide { grid-column: span 2; }
 .field input, .field select, .field textarea { width: 100%; padding: 8px; border: 1px solid #344252; border-radius: 4px; outline: 0; color: var(--text); background: #0f151c; font-size: 11px; }
-.field textarea { min-height: 78px; resize: vertical; font-family: "Cascadia Mono", Consolas, monospace; line-height: 1.35; }
+.field textarea { min-height: 78px; resize: vertical; font-family: "JetBrains Mono", "Noto Sans SC", serif; line-height: 1.35; }
 .sftp-editor { display: flex; width: min(900px, calc(100vw - 32px)); height: min(700px, calc(100vh - 32px)); flex-direction: column; }
-.sftp-editor textarea { min-height: 0; flex: 1; resize: none; padding: 10px; border: 1px solid var(--line); border-radius: 4px; outline: 0; color: var(--text); background: var(--input); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; tab-size: 2; }
+.sftp-editor textarea { min-height: 0; flex: 1; resize: none; padding: 10px; border: 1px solid var(--line); border-radius: 4px; outline: 0; color: var(--text); background: var(--input); font: 12px/1.5 "JetBrains Mono", "Noto Sans SC", serif; tab-size: 2; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); }
 .input-with-action, .private-key-picker { display: flex; align-items: center; gap: 7px; }
 .input-with-action input { min-width: 0; flex: 1; }
@@ -473,7 +481,7 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .sql-section-toolbar .toolbar-button.icon-only { padding: 0; }
 .sql-editor-host { min-height: 0; flex: 1; overflow: hidden; }
 .sql-editor-host .cm-editor { height: 100%; background: var(--input); font-size: 11px; }
-.sql-editor-host .cm-scroller { overflow: auto; font-family: "Cascadia Mono", Consolas, monospace; }
+.sql-editor-host .cm-scroller { overflow: auto; font-family: "JetBrains Mono", "Noto Sans SC", serif; }
 .sql-editor-host .cm-gutters { border-right-color: var(--line-soft); background: var(--surface); }
 .result-section { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .result-toolbar { flex: 0 0 34px; }
@@ -501,7 +509,7 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .result-column-resizer { position: absolute; z-index: 3; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; outline: 0; touch-action: none; }
 .result-column-resizer::after { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; content: ''; }
 .result-column-resizer:hover::after, .result-column-resizer:focus::after { background: var(--blue); }
-.result-grid td { max-width: 360px; padding: 6px 9px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); color: var(--text); font: 9px/1.35 "Cascadia Mono", Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-grid td { max-width: 360px; padding: 6px 9px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); color: var(--text); font: 9px/1.35 "JetBrains Mono", "Noto Sans SC", serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-grid tbody tr:hover td { background: var(--hover); }
 .result-grid tbody tr.selected td { background: rgba(128,183,255,.1); }
 .result-grid tbody tr.inserted td { box-shadow: inset 0 2px rgba(121,217,173,.35); }
@@ -552,9 +560,9 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .cell-detail-panel header small { margin-left: auto; color: var(--subtle); }
 .cell-detail-panel header button { width: 24px; height: 24px; border: 0; color: var(--muted); background: transparent; font-size: 17px; }
 .cell-detail-panel header button:hover { color: var(--text); }
-.cell-detail-panel textarea { min-height: 0; flex: 1; resize: none; padding: 10px; border: 0; outline: 0; color: var(--text); background: var(--input); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; white-space: pre; }
+.cell-detail-panel textarea { min-height: 0; flex: 1; resize: none; padding: 10px; border: 0; outline: 0; color: var(--text); background: var(--input); font: 12px/1.5 "JetBrains Mono", "Noto Sans SC", serif; white-space: pre; }
 .result-status { display: flex; min-height: 28px; flex: 0 0 28px; align-items: center; gap: 10px; padding: 0 8px; border-top: 1px solid var(--line); color: var(--subtle); background: var(--surface); font-size: 9px; }
-.result-status code { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.result-status code { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-family: "JetBrains Mono", "Noto Sans SC", serif; text-overflow: ellipsis; white-space: nowrap; }
 .result-status > span { white-space: nowrap; }
 .result-status .result-pager { margin-left: 0; }
 .result-empty, .mutation-result { display: flex; height: 100%; min-height: 100px; align-items: center; justify-content: center; color: var(--subtle); font-size: 10px; }

@@ -82,7 +82,7 @@ async function disconnect(): Promise<void> {
 
 onMounted(() => {
   if (!terminalHost.value) return
-  terminal = new Terminal({ convertEol: true, cursorBlink: true, fontFamily: 'Cascadia Mono, Consolas, monospace', fontSize: 13, theme: { background: '#0a0f15', foreground: '#dbe7f4', cursor: '#68d6bd' }, scrollback: 10000 })
+  terminal = new Terminal({ convertEol: true, cursorBlink: true, fontFamily: '"JetBrains Mono", "Noto Sans SC", serif', fontSize: 13, fontWeight: '400', fontWeightBold: '600', minimumContrastRatio: 4.5, theme: { background: '#1a1b1d', foreground: '#e0e0e0', cursor: '#919292' }, scrollback: 10000 })
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
