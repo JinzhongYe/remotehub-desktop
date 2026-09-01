@@ -45,7 +45,7 @@ const pendingStatus = new Map<string, SshStatusEvent>()
 
 const terminalThemes: Record<'dark' | 'light', ITheme> = {
   dark: { background: '#1a1b1d', foreground: '#e0e0e0', cursor: '#919292', black: '#000000', red: '#8c1a10', green: '#4aa22f', yellow: '#99972f', blue: '#0037da', magenta: '#a42aad', cyan: '#48a3b0', white: '#c0bfbf', brightBlack: '#666566', brightRed: '#d32d1f', brightGreen: '#63d33f', brightYellow: '#e6e34b', brightBlue: '#5b75ff', brightMagenta: '#d239de', brightCyan: '#67e2e3', brightWhite: '#e6e5e6', selectionBackground: '#6297e0', selectionForeground: '#ffffff', selectionInactiveBackground: '#7e7e7e' },
-  light: { background: '#ffffff', foreground: '#000000', cursor: '#1769aa', yellow: '#6b5200', brightYellow: '#7a5d00', selectionBackground: '#b9d7f0', selectionForeground: '#000000', selectionInactiveBackground: '#d7e6f2' }
+  light: { background: '#ffffff', foreground: '#000000', cursor: '#1769aa', black: '#000000', red: '#8c1a10', green: '#4aa22f', yellow: '#99972f', blue: '#0037da', magenta: '#a42aad', cyan: '#48a3b0', white: '#c0bfbf', brightBlack: '#666566', brightRed: '#d32d1f', brightGreen: '#63d33f', brightYellow: '#e6e34b', brightBlue: '#5b75ff', brightMagenta: '#d239de', brightCyan: '#67e2e3', brightWhite: '#e6e5e6', selectionBackground: '#b9d7f0', selectionForeground: '#000000', selectionInactiveBackground: '#d7e6f2' }
 }
 
 function terminalTheme(): ITheme {
@@ -53,7 +53,7 @@ function terminalTheme(): ITheme {
 }
 
 function terminalContrastRatio(): number {
-  return document.documentElement.dataset.theme === 'light' ? 7 : 4.5
+  return document.documentElement.dataset.theme === 'light' ? 1 : 7
 }
 
 function writeTerminal(data: string): void {
