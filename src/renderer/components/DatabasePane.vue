@@ -5,7 +5,7 @@ import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { DatabaseCatalog, DatabaseCell, DatabaseColumn, DatabaseQueryResult, DatabaseTable } from '../../shared/database'
-import { DATABASE_PAGE_SIZE, databaseCellDetail, databaseDisplayRows } from '../../shared/database'
+import { DATABASE_PAGE_SIZE, databaseCellDetail, databaseDisplayRows, databaseSqlLiteral, parseDatabaseCsv } from '../../shared/database'
 import { t } from '../i18n'
 import { useConnectionStore } from '../stores/connection'
 
@@ -14,6 +14,7 @@ const connections = useConnectionStore()
 const connection = computed(() => connections.connections.find((item) => item.id === props.connectionId))
 const isPostgres = computed(() => connection.value?.databaseType === 'postgres')
 const isSqlite = computed(() => connection.value?.databaseType === 'sqlite')
+type EditableRow = { values: DatabaseCell[]; original?: DatabaseCell[]; selected: boolean }
 
 const editorHost = ref<HTMLElement | null>(null)
 const sessionId = ref('')
@@ -22,16 +23,24 @@ const selectedDatabase = ref('')
 const activeDatabase = ref('')
 const tables = ref<DatabaseTable[]>([])
 const columnsByTable = ref<Record<string, DatabaseColumn[]>>({})
-const expandedTable = ref('')
 const expandedSchema = ref('')
+const collapsedSections = ref<Record<string, boolean>>({})
 const openedTables = ref<DatabaseTable[]>([])
+const openedStructures = ref<DatabaseTable[]>([])
 const activeTableName = ref('')
-const activeTable = computed(() => openedTables.value.find((table) => tableKey(table) === activeTableName.value) || null)
-const workspaceMode = ref<'table' | 'sql'>('sql')
+const activeTable = computed(() => [...openedTables.value, ...openedStructures.value].find((table) => tableKey(table) === activeTableName.value) || null)
+const workspaceMode = ref<'home' | 'table' | 'structure' | 'sql'>('home')
 const schemaFilter = ref('')
 const rowFilter = ref('')
+const filterVisible = ref(false)
+const columnPickerVisible = ref(false)
+const hiddenColumns = ref<Record<string, string[]>>({})
+const columnWidths = ref<Record<string, number>>({})
+const tableDrafts = ref<Record<string, EditableRow[]>>({})
+const deletedRows = ref<Record<string, DatabaseCell[][]>>({})
 const sortColumn = ref(-1)
 const sortDirection = ref<'asc' | 'desc'>('asc')
+const tableSorts = ref<Record<string, { column: string; direction: 'asc' | 'desc' }>>({})
 const sqlResult = ref<DatabaseQueryResult | null>(null)
 const tableResults = ref<Record<string, DatabaseQueryResult>>({})
 const connecting = ref(true)
@@ -43,10 +52,17 @@ const sqlLastSql = ref('')
 const tableLastSql = ref<Record<string, string>>({})
 const cellContextMenu = ref<{ x: number; y: number; row: DatabaseCell[]; rowIndex: number; columnIndex: number; value: DatabaseCell } | null>(null)
 const selectedCell = ref<{ row: DatabaseCell[]; rowNumber: number; columnIndex: number; columnName: string; columnType: string; value: DatabaseCell } | null>(null)
+const structureSection = ref<'fields' | 'indexes' | 'foreignKeys' | 'checks' | 'triggers' | 'advanced'>('fields')
+const selectedStructureColumnName = ref('')
+const csvInput = ref<HTMLInputElement | null>(null)
+const workspaceHost = ref<HTMLElement | null>(null)
+const schemaWidth = ref(235)
+const resizingSchema = ref(false)
 let editor: EditorView | undefined
 const editorTheme = new Compartment()
 let themeObserver: MutationObserver | undefined
 let disposed = false
+let columnResize: { key: string; startX: number; startWidth: number } | null = null
 
 function databaseEditorTheme() {
   return document.documentElement.dataset.theme === 'light' ? [] : oneDark
@@ -70,15 +86,31 @@ const postgresSchemas = computed(() => [...new Set(tables.value.map((table) => t
 
 const result = computed(() => workspaceMode.value === 'table' && activeTableName.value
   ? tableResults.value[activeTableName.value] || null
-  : sqlResult.value)
+  : workspaceMode.value === 'sql' ? sqlResult.value : null)
 
 const lastSql = computed(() => workspaceMode.value === 'table' && activeTableName.value
   ? tableLastSql.value[activeTableName.value] || ''
   : sqlLastSql.value)
 
+const activeDraftRows = computed(() => tableDrafts.value[activeTableName.value] || [])
 const displayRows = computed(() => result.value?.kind === 'rows'
-  ? databaseDisplayRows(result.value.rows, rowFilter.value, sortColumn.value, sortDirection.value)
+  ? databaseDisplayRows(workspaceMode.value === 'table' ? activeDraftRows.value.map((row) => row.values) : result.value.rows, rowFilter.value, workspaceMode.value === 'table' ? -1 : sortColumn.value, sortDirection.value)
   : [])
+const visibleColumnIndexes = computed(() => result.value?.kind === 'rows'
+  ? result.value.columns.map((_, index) => index).filter((index) => !hiddenColumns.value[activeTableName.value]?.includes(result.value!.columns[index].name))
+  : [])
+const canEditTable = computed(() => workspaceMode.value === 'table' && activeTable.value?.type === 'table' && !isSqlite.value && result.value?.kind === 'rows')
+const hasPrimaryKey = computed(() => (columnsByTable.value[activeTableName.value] || []).some((column) => column.key === 'PRI'))
+const canEditCells = computed(() => canEditTable.value && hasPrimaryKey.value)
+const selectedRowCount = computed(() => activeDraftRows.value.filter((row) => row.selected).length)
+const canDeleteSelected = computed(() => canEditTable.value && activeDraftRows.value.filter((row) => row.selected).every((row) => !row.original || hasPrimaryKey.value))
+const pendingChangeCount = computed(() => (deletedRows.value[activeTableName.value]?.length || 0) + activeDraftRows.value.filter((row) => !row.original || !sameRow(row.values, row.original)).length)
+const homeTables = computed(() => {
+  const needle = schemaFilter.value.trim().toLocaleLowerCase()
+  return needle ? tables.value.filter((table) => table.name.toLocaleLowerCase().includes(needle)) : tables.value
+})
+const structureSections = computed(() => (['fields', 'indexes', 'foreignKeys', 'checks', 'triggers', 'advanced'] as const).map((key) => ({ key, label: t(key) })))
+const selectedStructureColumn = computed(() => (columnsByTable.value[activeTableName.value] || []).find((column) => column.name === selectedStructureColumnName.value) || null)
 
 const resultSummary = computed(() => {
   if (!result.value) return t('queryReady')
@@ -125,16 +157,22 @@ async function changeDatabase(): Promise<void> {
     const nextTables = await window.api.database.listTables(sessionId.value, selectedDatabase.value)
     activeDatabase.value = selectedDatabase.value
     tables.value = nextTables
-    expandedTable.value = ''
     expandedSchema.value = ''
+    collapsedSections.value = {}
     openedTables.value = []
+    openedStructures.value = []
     activeTableName.value = ''
     sqlResult.value = null
     sqlLastSql.value = ''
     tableResults.value = {}
     tableLastSql.value = {}
+    tableDrafts.value = {}
+    deletedRows.value = {}
+    hiddenColumns.value = {}
+    columnWidths.value = {}
+    tableSorts.value = {}
     columnsByTable.value = {}
-    workspaceMode.value = 'sql'
+    workspaceMode.value = 'home'
     if (isPostgres.value) expandedSchema.value = postgresSchemas.value.some((schema) => schema.name === 'public') ? 'public' : postgresSchemas.value[0]?.name || ''
   } catch (error) {
     if (previousDatabase && previousDatabase !== selectedDatabase.value) await window.api.database.useDatabase(sessionId.value, previousDatabase).catch(() => undefined)
@@ -170,33 +208,53 @@ async function loadColumns(table: DatabaseTable): Promise<void> {
   }
 }
 
-async function toggleTable(table: DatabaseTable): Promise<void> {
-  const key = tableKey(table)
-  if (expandedTable.value === key) {
-    expandedTable.value = ''
-    return
-  }
-  expandedTable.value = key
-  try { await loadColumns(table) } catch (error) { showError(error) }
+function toggleSection(key: string): void {
+  collapsedSections.value[key] = !collapsedSections.value[key]
 }
 
 async function openTable(table: DatabaseTable): Promise<void> {
   const key = tableKey(table)
   if (!openedTables.value.some((item) => tableKey(item) === key)) openedTables.value.push(table)
   activeTableName.value = key
-  expandedTable.value = key
   workspaceMode.value = 'table'
   rowFilter.value = ''
-  sortColumn.value = -1
+  restoreTableSort(key)
   try { await loadColumns(table) } catch (error) { showError(error) }
   if (!tableResults.value[key]) await runQuery(0, tableQuery(table))
 }
 
 function activateTable(table: DatabaseTable): void {
-  activeTableName.value = tableKey(table)
+  const key = tableKey(table)
+  activeTableName.value = key
   workspaceMode.value = 'table'
   rowFilter.value = ''
-  sortColumn.value = -1
+  restoreTableSort(key)
+}
+
+function showTableStructure(): void {
+  if (!activeTable.value) return
+  const table = activeTable.value
+  if (!openedStructures.value.some((item) => tableKey(item) === activeTableName.value)) openedStructures.value.push(table)
+  structureSection.value = 'fields'
+  const columns = columnsByTable.value[activeTableName.value] || []
+  if (!columns.some((column) => column.name === selectedStructureColumnName.value)) selectedStructureColumnName.value = columns[0]?.name || ''
+  workspaceMode.value = 'structure'
+}
+
+function activateStructure(table: DatabaseTable): void {
+  activeTableName.value = tableKey(table)
+  const columns = columnsByTable.value[activeTableName.value] || []
+  if (!columns.some((column) => column.name === selectedStructureColumnName.value)) selectedStructureColumnName.value = columns[0]?.name || ''
+  workspaceMode.value = 'structure'
+}
+
+function showTableData(): void {
+  if (activeTable.value) activateTable(activeTable.value)
+}
+
+function openSqlEditor(): void {
+  workspaceMode.value = 'sql'
+  void nextTick(() => editor?.focus())
 }
 
 function closeTable(table: DatabaseTable): void {
@@ -206,13 +264,40 @@ function closeTable(table: DatabaseTable): void {
   openedTables.value.splice(index, 1)
   delete tableResults.value[key]
   delete tableLastSql.value[key]
-  if (activeTableName.value !== key) return
-  activeTableName.value = tableKey(openedTables.value[index] || openedTables.value[index - 1])
-  if (!activeTableName.value) workspaceMode.value = 'sql'
+  delete tableDrafts.value[key]
+  delete deletedRows.value[key]
+  delete hiddenColumns.value[key]
+  delete tableSorts.value[key]
+  if (workspaceMode.value !== 'table' || activeTableName.value !== key) return
+  const next = openedTables.value[index] || openedTables.value[index - 1]
+  if (next) activateTable(next)
+  else {
+    const structure = openedStructures.value[0]
+    if (structure) activateStructure(structure)
+    else workspaceMode.value = 'home'
+  }
+}
+
+function closeStructure(table: DatabaseTable): void {
+  const key = tableKey(table)
+  const index = openedStructures.value.findIndex((item) => tableKey(item) === key)
+  if (index < 0) return
+  openedStructures.value.splice(index, 1)
+  if (workspaceMode.value !== 'structure' || activeTableName.value !== key) return
+  const next = openedStructures.value[index] || openedStructures.value[index - 1]
+  if (next) activateStructure(next)
+  else {
+    const data = openedTables.value.find((item) => tableKey(item) === key)
+    if (data) activateTable(data)
+    else {
+      activeTableName.value = ''
+      workspaceMode.value = 'home'
+    }
+  }
 }
 
 function openTableSql(): void {
-  workspaceMode.value = 'sql'
+  openSqlEditor()
   if (activeTable.value) setEditorText(tableQuery(activeTable.value))
 }
 
@@ -241,7 +326,13 @@ async function runQuery(page = 0, sqlOverride?: string): Promise<void> {
   try {
     const nextResult = await window.api.database.query(sessionId.value, { sql: query, page, pageSize: DATABASE_PAGE_SIZE })
     if (targetTable) {
-      if (openedTables.value.some((table) => tableKey(table) === targetTable)) tableResults.value[targetTable] = nextResult
+      if (openedTables.value.some((table) => tableKey(table) === targetTable)) {
+        tableResults.value[targetTable] = nextResult
+        if (nextResult.kind === 'rows') {
+          tableDrafts.value[targetTable] = nextResult.rows.map((values: DatabaseCell[]) => ({ values: [...values], original: [...values], selected: false }))
+          deletedRows.value[targetTable] = []
+        }
+      }
     } else sqlResult.value = nextResult
     if (nextResult.kind === 'mutation') await refreshSchema()
   } catch (error) { showError(error) } finally { running.value = false }
@@ -259,15 +350,6 @@ function setEditorText(value: string): void {
   editor.focus()
 }
 
-function insertTableName(table: DatabaseTable): void {
-  workspaceMode.value = 'sql'
-  if (!editor) return
-  const value = qualifiedTableName(table)
-  const selection = editor.state.selection.main
-  editor.dispatch({ changes: { from: selection.from, to: selection.to, insert: value }, selection: { anchor: selection.from + value.length } })
-  editor.focus()
-}
-
 function handleEditorKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault()
@@ -275,22 +357,81 @@ function handleEditorKeydown(event: KeyboardEvent): void {
   }
 }
 
-function toggleSort(index: number): void {
+async function toggleSort(index: number): Promise<void> {
+  if (running.value || (workspaceMode.value === 'table' && pendingChangeCount.value)) return
   if (sortColumn.value === index) sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
   else {
     sortColumn.value = index
     sortDirection.value = 'asc'
   }
+  if (workspaceMode.value === 'table' && activeTable.value && result.value?.kind === 'rows') {
+    tableSorts.value[activeTableName.value] = { column: result.value.columns[index].name, direction: sortDirection.value }
+    await runQuery(0, tableQuery(activeTable.value))
+  }
+}
+
+function restoreTableSort(key: string): void {
+  const sort = tableSorts.value[key]
+  const tableResult = tableResults.value[key]
+  sortColumn.value = sort && tableResult?.kind === 'rows' ? tableResult.columns.findIndex((column) => column.name === sort.column) : -1
+  sortDirection.value = sort?.direction || 'asc'
+}
+
+function columnWidthKey(index: number): string {
+  return `${workspaceMode.value}:${activeTableName.value}:${result.value?.columns[index]?.name || index}:${index}`
+}
+
+function columnStyle(index: number): Record<string, string> {
+  const width = columnWidths.value[columnWidthKey(index)]
+  return width ? { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` } : {}
+}
+
+function setColumnWidth(key: string, width: number): void {
+  columnWidths.value[key] = Math.max(64, Math.round(width))
+}
+
+function startColumnResize(index: number, event: PointerEvent): void {
+  const handle = event.currentTarget as HTMLElement
+  columnResize = { key: columnWidthKey(index), startX: event.clientX, startWidth: handle.parentElement!.getBoundingClientRect().width }
+  handle.setPointerCapture(event.pointerId)
+}
+
+function resizeColumn(event: PointerEvent): void {
+  if (columnResize) setColumnWidth(columnResize.key, columnResize.startWidth + event.clientX - columnResize.startX)
+}
+
+function stopColumnResize(event: PointerEvent): void {
+  columnResize = null
+  const handle = event.currentTarget as HTMLElement
+  if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId)
+}
+
+function resizeColumnWithKeyboard(index: number, event: KeyboardEvent): void {
+  const delta = event.key === 'ArrowLeft' ? -12 : event.key === 'ArrowRight' ? 12 : 0
+  if (!delta) return
+  setColumnWidth(columnWidthKey(index), (event.currentTarget as HTMLElement).parentElement!.getBoundingClientRect().width + delta)
+  event.preventDefault()
+}
+
+function columnMetadata(index: number): DatabaseColumn | undefined {
+  const name = result.value?.columns[index]?.name
+  return workspaceMode.value === 'table' && activeTable.value && name
+    ? columnsByTable.value[tableKey(activeTable.value)]?.find((column) => column.name === name)
+    : undefined
 }
 
 function columnType(index: number): string {
-  const name = result.value?.columns[index]?.name
-  return (activeTable.value && name ? columnsByTable.value[tableKey(activeTable.value)]?.find((column) => column.name === name)?.columnType : undefined)
-    || result.value?.columns[index]?.type || ''
+  return columnMetadata(index)?.columnType || result.value?.columns[index]?.type || ''
+}
+
+function columnDetails(index: number): string {
+  const column = columnMetadata(index)
+  return [columnType(index), column?.length != null ? `${t('length')}: ${column.length}` : '', column?.comment ? `${t('comment')}: ${column.comment}` : ''].filter(Boolean).join(' · ')
 }
 
 function tableQuery(table: DatabaseTable): string {
-  return `SELECT * FROM ${qualifiedTableName(table)};`
+  const sort = tableSorts.value[tableKey(table)]
+  return `SELECT * FROM ${qualifiedTableName(table)}${sort ? ` ORDER BY ${quoteIdentifier(sort.column)} ${sort.direction.toUpperCase()}` : ''};`
 }
 
 function qualifiedTableName(table: DatabaseTable): string {
@@ -309,6 +450,125 @@ function displayCell(value: string | number | boolean | null): string {
   return value == null ? 'NULL' : String(value)
 }
 
+function sameRow(left: DatabaseCell[], right: DatabaseCell[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function editableRow(values: DatabaseCell[]): EditableRow | undefined {
+  return activeDraftRows.value.find((row) => row.values === values)
+}
+
+function updateCell(values: DatabaseCell[], index: number, event: Event): void {
+  const row = editableRow(values)
+  if (!row || (row.original && !canEditCells.value)) return
+  row.values[index] = (event.target as HTMLInputElement).value
+}
+
+function addRow(): void {
+  if (!canEditTable.value || result.value?.kind !== 'rows') return
+  activeDraftRows.value.unshift({ values: result.value.columns.map(() => null), selected: true })
+}
+
+function toggleRowSelection(values: DatabaseCell[]): void {
+  const row = editableRow(values)
+  if (row) row.selected = !row.selected
+}
+
+async function refreshStructure(): Promise<void> {
+  if (!activeTable.value) return
+  delete columnsByTable.value[activeTableName.value]
+  try {
+    await loadColumns(activeTable.value)
+    selectedStructureColumnName.value = columnsByTable.value[activeTableName.value]?.[0]?.name || ''
+  } catch (error) { showError(error) }
+}
+
+function deleteSelectedRows(): void {
+  if (!canEditTable.value || !selectedRowCount.value) return
+  const removed = activeDraftRows.value.filter((row) => row.selected)
+  deletedRows.value[activeTableName.value] = [...(deletedRows.value[activeTableName.value] || []), ...removed.flatMap((row) => row.original ? [row.original] : [])]
+  tableDrafts.value[activeTableName.value] = activeDraftRows.value.filter((row) => !row.selected)
+}
+
+function discardChanges(): void {
+  if (result.value?.kind !== 'rows') return
+  tableDrafts.value[activeTableName.value] = result.value.rows.map((values) => ({ values: [...values], original: [...values], selected: false }))
+  deletedRows.value[activeTableName.value] = []
+}
+
+async function saveChanges(): Promise<void> {
+  if (!canEditTable.value || !activeTable.value || result.value?.kind !== 'rows' || !pendingChangeCount.value || running.value) return
+  const columns = result.value.columns
+  const metadata = columnsByTable.value[activeTableName.value] || []
+  const keys = columns.map((column, index) => metadata.find((item) => item.name === column.name)?.key === 'PRI' ? index : -1).filter((index) => index >= 0)
+  const whereIndexes = keys.length ? keys : columns.map((_, index) => index)
+  const table = qualifiedTableName(activeTable.value)
+  const predicate = (values: DatabaseCell[]) => whereIndexes.map((index) => `${quoteIdentifier(columns[index].name)} ${values[index] == null ? 'IS NULL' : `= ${databaseSqlLiteral(values[index])}`}`).join(' AND ')
+  const statements: string[] = []
+  for (const values of deletedRows.value[activeTableName.value] || []) statements.push(`DELETE FROM ${table} WHERE ${predicate(values)}`)
+  for (const row of activeDraftRows.value) {
+    if (!row.original) {
+      const indexes = columns.map((_, index) => index).filter((index) => row.values[index] != null || metadata.find((item) => item.name === columns[index].name)?.extra !== 'auto increment')
+      statements.push(indexes.length
+        ? `INSERT INTO ${table} (${indexes.map((index) => quoteIdentifier(columns[index].name)).join(', ')}) VALUES (${indexes.map((index) => databaseSqlLiteral(row.values[index])).join(', ')})`
+        : isPostgres.value ? `INSERT INTO ${table} DEFAULT VALUES` : `INSERT INTO ${table} () VALUES ()`)
+    } else if (!sameRow(row.values, row.original)) {
+      const changed = columns.map((_, index) => index).filter((index) => row.values[index] !== row.original![index])
+      statements.push(`UPDATE ${table} SET ${changed.map((index) => `${quoteIdentifier(columns[index].name)} = ${databaseSqlLiteral(row.values[index])}`).join(', ')} WHERE ${predicate(row.original)}`)
+    }
+  }
+  running.value = true
+  errorMessage.value = ''
+  try {
+    for (const sql of statements) await window.api.database.query(sessionId.value, { sql })
+  } catch (error) {
+    showError(error)
+    return
+  } finally { running.value = false }
+  await runQuery(result.value.page, tableQuery(activeTable.value))
+}
+
+function toggleColumn(name: string): void {
+  const hidden = hiddenColumns.value[activeTableName.value] || []
+  hiddenColumns.value[activeTableName.value] = hidden.includes(name) ? hidden.filter((item) => item !== name) : [...hidden, name]
+}
+
+async function importCsv(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !canEditTable.value || result.value?.kind !== 'rows') return
+  try {
+    const imported = parseDatabaseCsv(await file.text())
+    const indexes = result.value.columns.map((column) => imported.columns.indexOf(column.name))
+    if (indexes.every((index) => index < 0)) throw new Error(t('importCsvFailed'))
+    for (const source of imported.rows) activeDraftRows.value.push({ values: indexes.map((index) => index < 0 ? null : source[index]), selected: false })
+  } catch (error) { showError(error) }
+}
+
+function startSchemaResize(event: PointerEvent): void {
+  resizingSchema.value = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function resizeSchema(event: PointerEvent): void {
+  if (!resizingSchema.value || !workspaceHost.value) return
+  schemaWidth.value = Math.max(180, Math.min(520, event.clientX - workspaceHost.value.getBoundingClientRect().left))
+}
+
+function stopSchemaResize(event: PointerEvent): void {
+  resizingSchema.value = false
+  const target = event.currentTarget as HTMLElement
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+}
+
+function resizeSchemaWithKeyboard(event: KeyboardEvent): void {
+  const delta = event.key === 'ArrowLeft' ? -12 : event.key === 'ArrowRight' ? 12 : 0
+  if (!delta) return
+  schemaWidth.value = Math.max(180, Math.min(520, schemaWidth.value + delta))
+  event.preventDefault()
+}
+
 function showCellContextMenu(event: MouseEvent, row: DatabaseCell[], rowIndex: number, columnIndex: number, value: DatabaseCell): void {
   event.preventDefault()
   event.stopPropagation()
@@ -322,17 +582,22 @@ function showCellContextMenu(event: MouseEvent, row: DatabaseCell[], rowIndex: n
   }
 }
 
+function updateCellDetail(row: DatabaseCell[], rowIndex: number, columnIndex: number, value: DatabaseCell, open = false): void {
+  if ((!selectedCell.value && !open) || result.value?.kind !== 'rows') return
+  selectedCell.value = {
+    row,
+    rowNumber: result.value.page * result.value.pageSize + rowIndex + 1,
+    columnIndex,
+    columnName: result.value.columns[columnIndex]?.name || `#${columnIndex + 1}`,
+    columnType: columnType(columnIndex),
+    value
+  }
+}
+
 function showFullCellData(): void {
   const target = cellContextMenu.value
-  if (!target || result.value?.kind !== 'rows') return
-  selectedCell.value = {
-    row: target.row,
-    rowNumber: result.value.page * result.value.pageSize + target.rowIndex + 1,
-    columnIndex: target.columnIndex,
-    columnName: result.value.columns[target.columnIndex]?.name || `#${target.columnIndex + 1}`,
-    columnType: columnType(target.columnIndex),
-    value: target.value
-  }
+  if (!target) return
+  updateCellDetail(target.row, target.rowIndex, target.columnIndex, target.value, true)
   cellContextMenu.value = null
 }
 
@@ -396,8 +661,8 @@ onBeforeUnmount(() => {
       <button v-if="!sessionId && !connecting" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button>
     </header>
     <div v-if="errorMessage" class="database-error"><span>{{ errorMessage }}</span><button class="icon-button" @click="errorMessage = ''">×</button></div>
-    <div class="database-workspace">
-      <aside class="schema-explorer">
+    <div ref="workspaceHost" class="database-workspace" :class="{ resizing: resizingSchema }">
+      <aside class="schema-explorer" :style="{ width: `${schemaWidth}px`, flexBasis: `${schemaWidth}px` }">
         <div class="schema-heading"><span>{{ t('schemaExplorer') }}</span><small>{{ tables.length }}</small></div>
         <label class="schema-search"><span>⌕</span><input v-model="schemaFilter" :placeholder="t('searchObjects')"></label>
         <template v-if="isPostgres">
@@ -412,10 +677,9 @@ onBeforeUnmount(() => {
                 <template v-if="expandedSchema === schema.name">
                   <div v-if="!schema.sections.length" class="schema-empty">{{ t('noMatchingObjects') }}</div>
                   <template v-for="section in schema.sections" v-else :key="section.type">
-                    <div class="schema-group"><span>{{ section.type === 'table' ? '▦' : '▤' }}</span><strong>{{ section.label }}</strong><small>{{ section.items.length }}</small></div>
-                    <div v-for="table in section.items" :key="tableKey(table)" class="schema-table" :class="{ active: activeTableName === tableKey(table) }">
-                      <button :title="t('doubleClickPreview')" @click="toggleTable(table)" @dblclick.stop="openTable(table)"><span>{{ expandedTable === tableKey(table) ? '⌄' : '›' }}</span><i>{{ table.type === 'view' ? 'V' : 'T' }}</i><strong>{{ table.name }}</strong><small v-if="table.estimatedRows != null">{{ table.estimatedRows }}</small></button>
-                      <div v-if="expandedTable === tableKey(table)" class="schema-columns"><button class="schema-insert" @click="insertTableName(table)">＋ {{ t('insertName') }}</button><span v-if="!columnsByTable[tableKey(table)]">{{ t('loading') }}</span><span v-for="column in columnsByTable[tableKey(table)] || []" :key="column.name" :title="column.columnType"><b>{{ column.key === 'PRI' ? '◆' : '·' }}</b><em>{{ column.name }}</em><small>{{ column.columnType }}</small></span></div>
+                    <button class="schema-group" :aria-expanded="!collapsedSections[`${schema.name}:${section.type}`]" @click="toggleSection(`${schema.name}:${section.type}`)"><span>{{ collapsedSections[`${schema.name}:${section.type}`] ? '›' : '⌄' }}</span><strong>{{ section.type === 'table' ? '▦' : '▤' }} {{ section.label }}</strong><small>{{ section.items.length }}</small></button>
+                    <div v-for="table in collapsedSections[`${schema.name}:${section.type}`] ? [] : section.items" :key="tableKey(table)" class="schema-table" :class="{ active: activeTableName === tableKey(table) }">
+                      <button :title="t('doubleClickPreview')" @dblclick="openTable(table)"><i>{{ table.type === 'view' ? 'V' : 'T' }}</i><strong>{{ table.name }}</strong><small v-if="table.estimatedRows != null">{{ table.estimatedRows }}</small></button>
                     </div>
                   </template>
                 </template>
@@ -429,38 +693,90 @@ onBeforeUnmount(() => {
           <div v-else-if="!tables.length" class="schema-empty">{{ t('emptyDatabase') }}</div>
           <div v-else-if="!tableSections.length" class="schema-empty">{{ t('noMatchingObjects') }}</div>
           <template v-for="section in tableSections" v-else :key="section.type">
-            <div class="schema-group"><span>{{ section.type === 'table' ? '▦' : '▤' }}</span><strong>{{ section.label }}</strong><small>{{ section.items.length }}</small></div>
-            <div v-for="table in section.items" :key="tableKey(table)" class="schema-table" :class="{ active: activeTableName === tableKey(table) }">
-              <button :title="t('doubleClickPreview')" @click="toggleTable(table)" @dblclick.stop="openTable(table)"><span>{{ expandedTable === tableKey(table) ? '⌄' : '›' }}</span><i>{{ table.type === 'view' ? 'V' : 'T' }}</i><strong>{{ table.name }}</strong><small v-if="table.estimatedRows != null">{{ table.estimatedRows }}</small></button>
-              <div v-if="expandedTable === tableKey(table)" class="schema-columns"><button class="schema-insert" @click="insertTableName(table)">＋ {{ t('insertName') }}</button><span v-if="!columnsByTable[tableKey(table)]">{{ t('loading') }}</span><span v-for="column in columnsByTable[tableKey(table)] || []" :key="column.name" :title="column.columnType"><b>{{ column.key === 'PRI' ? '◆' : '·' }}</b><em>{{ column.name }}</em><small>{{ column.columnType }}</small></span></div>
+            <button class="schema-group" :aria-expanded="!collapsedSections[section.type]" @click="toggleSection(section.type)"><span>{{ collapsedSections[section.type] ? '›' : '⌄' }}</span><strong>{{ section.type === 'table' ? '▦' : '▤' }} {{ section.label }}</strong><small>{{ section.items.length }}</small></button>
+            <div v-for="table in collapsedSections[section.type] ? [] : section.items" :key="tableKey(table)" class="schema-table" :class="{ active: activeTableName === tableKey(table) }">
+              <button :title="t('doubleClickPreview')" @dblclick="openTable(table)"><i>{{ table.type === 'view' ? 'V' : 'T' }}</i><strong>{{ table.name }}</strong><small v-if="table.estimatedRows != null">{{ table.estimatedRows }}</small></button>
             </div>
           </template>
         </template>
       </aside>
+      <div class="schema-resizer" role="separator" tabindex="0" aria-orientation="vertical" :aria-valuemin="180" :aria-valuemax="520" :aria-valuenow="Math.round(schemaWidth)" @pointerdown.prevent="startSchemaResize" @pointermove="resizeSchema" @pointerup="stopSchemaResize" @pointercancel="stopSchemaResize" @keydown="resizeSchemaWithKeyboard"></div>
       <main class="sql-workspace">
         <nav class="database-tabs">
-          <button :class="{ active: workspaceMode === 'sql' }" @click="workspaceMode = 'sql'">⌁ {{ t('sqlEditor') }}</button>
-          <div v-for="table in openedTables" :key="tableKey(table)" class="database-table-tab" :class="{ active: workspaceMode === 'table' && activeTableName === tableKey(table) }"><button @click="activateTable(table)">▦ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeTable(table)">×</button></div>
+          <button :class="{ active: workspaceMode === 'home' }" @click="workspaceMode = 'home'">▦ {{ t('tableList') }}</button>
+          <button :class="{ active: workspaceMode === 'sql' }" @click="openSqlEditor">⌁ {{ t('sqlEditor') }}</button>
+          <div v-for="table in openedTables" :key="`data:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'table' && activeTableName === tableKey(table) }"><button @click="activateTable(table)">▦ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeTable(table)">×</button></div>
+          <div v-for="table in openedStructures" :key="`structure:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'structure' && activeTableName === tableKey(table) }"><button @click="activateStructure(table)">▤ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeStructure(table)">×</button></div>
         </nav>
+        <section v-if="workspaceMode === 'home'" class="database-home">
+          <div class="database-home-toolbar">
+            <button class="toolbar-button icon-only" :title="t('newQuery')" :aria-label="t('newQuery')" @click="openSqlEditor">⌁</button>
+            <button class="toolbar-button icon-only" :title="t('refresh')" :aria-label="t('refresh')" :disabled="loadingSchema" @click="refreshSchema">↻</button>
+            <strong>{{ t('tableList') }}</strong><small>{{ homeTables.length }}</small>
+            <label class="row-filter"><span>⌕</span><input v-model="schemaFilter" :placeholder="t('searchObjects')"></label>
+          </div>
+          <div v-if="!homeTables.length" class="result-empty">{{ loadingSchema ? t('loading') : t('emptyDatabase') }}</div>
+          <div v-else class="database-table-list">
+            <button v-for="table in homeTables" :key="tableKey(table)" :title="t('tableData')" @click="openTable(table)"><span>{{ table.type === 'view' ? '▤' : '▦' }}</span><strong>{{ isPostgres ? `${table.database}.${table.name}` : table.name }}</strong><small v-if="table.estimatedRows != null">{{ table.estimatedRows }}</small></button>
+          </div>
+        </section>
         <section v-show="workspaceMode === 'sql'" class="sql-editor-section">
           <div class="sql-section-toolbar"><span>{{ t('sqlEditor') }}</span><small>{{ t('runShortcut') }}</small><button class="toolbar-button icon-only" :title="running ? t('runningQuery') : t('runQuery')" :aria-label="running ? t('runningQuery') : t('runQuery')" :disabled="!sessionId || running" @click="runEditorQuery">▶</button></div>
           <div ref="editorHost" class="sql-editor-host" @keydown="handleEditorKeydown"></div>
         </section>
-        <section class="result-section" :class="{ 'table-mode': workspaceMode === 'table' }">
+        <section v-if="workspaceMode === 'structure' && activeTable" class="table-structure-section">
+          <div class="structure-toolbar">
+            <button class="toolbar-button icon-only" :title="t('applySchema')" :aria-label="t('applySchema')" disabled>▣</button>
+            <span></span>
+            <button class="toolbar-button icon-only" :title="t('addRow')" :aria-label="t('addRow')" disabled>＋</button>
+            <button class="toolbar-button icon-only" :title="t('remove')" :aria-label="t('remove')" disabled>×</button>
+            <button class="toolbar-button icon-only" :title="t('refresh')" :aria-label="t('refresh')" @click="refreshStructure">↻</button>
+            <nav class="structure-tabs"><button v-for="section in structureSections" :key="section.key" :class="{ active: structureSection === section.key }" @click="structureSection = section.key">{{ section.label }}</button></nav>
+            <button class="toolbar-button icon-only" :title="t('tableData')" :aria-label="t('tableData')" @click="showTableData">▦</button>
+          </div>
+          <div v-if="structureSection !== 'fields'" class="result-empty">{{ t('schemaDetailsUnavailable') }}</div>
+          <div v-else class="structure-content">
+            <div class="structure-table-wrap">
+              <table class="structure-field-table">
+                <thead><tr><th>{{ t('name') }}</th><th>{{ t('type') }}</th><th>{{ t('length') }}</th><th>{{ t('decimals') }}</th><th>{{ t('nullable') }}</th><th>{{ t('primaryKey') }}</th><th>{{ t('comment') }}</th></tr></thead>
+                <tbody><tr v-for="column in columnsByTable[activeTableName] || []" :key="column.name" :class="{ selected: selectedStructureColumnName === column.name }" @click="selectedStructureColumnName = column.name"><td>{{ column.name }}</td><td>{{ column.dataType }}</td><td>{{ column.length ?? '' }}</td><td>{{ column.scale ?? '' }}</td><td><input type="checkbox" :checked="column.nullable" disabled></td><td><span class="structure-key" :class="{ primary: column.key === 'PRI' }">◆</span>{{ column.key === 'PRI' ? column.ordinal : '' }}</td><td>{{ column.comment || '' }}</td></tr></tbody>
+              </table>
+            </div>
+            <aside v-if="selectedStructureColumn" class="structure-detail">
+              <label><span>{{ t('fields') }}</span><input readonly :value="selectedStructureColumn.name"></label>
+              <label><span>{{ t('comment') }}</span><textarea readonly :value="selectedStructureColumn.comment || ''"></textarea></label>
+              <fieldset><legend>{{ t('defaultValue') }}</legend><label><input type="radio" :checked="selectedStructureColumn.defaultValue == null" disabled> NULL</label><label><input type="radio" :checked="selectedStructureColumn.defaultValue != null" disabled> {{ t('defaultValue') }}</label></fieldset>
+              <label><span>{{ t('defaultValue') }}</span><input readonly :value="displayCell(selectedStructureColumn.defaultValue ?? null)"></label>
+              <label><span>{{ t('autoGenerated') }}</span><input readonly :value="selectedStructureColumn.extra || ''"></label>
+            </aside>
+          </div>
+        </section>
+        <section v-if="workspaceMode === 'table' || workspaceMode === 'sql'" class="result-section" :class="{ 'table-mode': workspaceMode === 'table' }">
           <div class="result-toolbar">
             <strong>{{ workspaceMode === 'table' && activeTable ? isPostgres ? `${activeTable.database}.${activeTable.name}` : activeTable.name : t('resultGrid') }}</strong>
-            <small>{{ resultSummary }}</small>
-            <label v-if="result?.kind === 'rows'" class="row-filter"><span>⌕</span><input v-model="rowFilter" :placeholder="t('filterRows')"></label>
-            <button class="toolbar-button muted icon-only" :title="t('refresh')" :aria-label="t('refresh')" :disabled="!result || running" @click="refreshResult">↻</button>
-            <button v-if="workspaceMode === 'table'" class="toolbar-button muted icon-only" :title="t('openInSql')" :aria-label="t('openInSql')" @click="openTableSql">⌁</button>
-            <button v-if="result?.kind === 'rows'" class="toolbar-button icon-only" :title="t('exportPage')" :aria-label="t('exportPage')" @click="exportResult">⇩</button>
+            <small>{{ pendingChangeCount && workspaceMode === 'table' ? t('pendingChanges', { count: pendingChangeCount }) : resultSummary }}</small>
+            <label v-if="result?.kind === 'rows' && (workspaceMode === 'sql' || filterVisible)" class="row-filter"><span>⌕</span><input v-model="rowFilter" :placeholder="t('filterRows')"></label>
+            <button class="toolbar-button muted icon-only" :title="t('refresh')" :aria-label="t('refresh')" :disabled="!result || running || (workspaceMode === 'table' && Boolean(pendingChangeCount))" @click="refreshResult">↻</button>
+            <template v-if="workspaceMode === 'table'">
+              <button class="toolbar-button icon-only" :title="t('addRow')" :aria-label="t('addRow')" :disabled="!canEditTable || running" @click="addRow">＋</button>
+              <button class="toolbar-button icon-only" :title="t('deleteSelectedRows')" :aria-label="t('deleteSelectedRows')" :disabled="!canDeleteSelected || !selectedRowCount || running" @click="deleteSelectedRows">−</button>
+              <button class="toolbar-button icon-only" :title="t('saveChanges')" :aria-label="t('saveChanges')" :disabled="!pendingChangeCount || running" @click="saveChanges">◫</button>
+              <button class="toolbar-button icon-only" :title="t('discardChanges')" :aria-label="t('discardChanges')" :disabled="!pendingChangeCount || running" @click="discardChanges">↶</button>
+              <button class="toolbar-button icon-only" :class="{ active: filterVisible }" :title="t('filterRows')" :aria-label="t('filterRows')" @click="filterVisible = !filterVisible">▽</button>
+              <span class="column-picker-wrap"><button class="toolbar-button icon-only" :class="{ active: columnPickerVisible }" :title="t('chooseColumns')" :aria-label="t('chooseColumns')" @click.stop="columnPickerVisible = !columnPickerVisible">☷</button><span v-if="columnPickerVisible && result?.kind === 'rows'" class="column-picker"><label v-for="column in result.columns" :key="column.name"><input type="checkbox" :checked="!hiddenColumns[activeTableName]?.includes(column.name)" @change="toggleColumn(column.name)"><span>{{ column.name }}</span></label></span></span>
+              <button class="toolbar-button icon-only" :title="t('importCsv')" :aria-label="t('importCsv')" :disabled="!canEditTable" @click="csvInput?.click()">⇧</button>
+              <button class="toolbar-button icon-only" :title="t('exportPage')" :aria-label="t('exportPage')" @click="exportResult">⇩</button>
+              <button class="toolbar-button icon-only" :title="t('tableStructure')" :aria-label="t('tableStructure')" @click="showTableStructure">▤</button>
+              <button class="toolbar-button icon-only" :title="t('openInSql')" :aria-label="t('openInSql')" @click="openTableSql">⌁</button>
+            </template>
+            <button v-else-if="result?.kind === 'rows'" class="toolbar-button icon-only" :title="t('exportPage')" :aria-label="t('exportPage')" @click="exportResult">⇩</button>
           </div>
           <div class="result-grid-wrap">
             <div v-if="!result" class="result-empty">{{ t('queryReady') }}</div>
             <div v-else-if="result.kind === 'mutation'" class="mutation-result"><strong>{{ t('queryCompleted') }}</strong><span>{{ t('affectedRows', { count: result.affectedRows, duration: result.durationMs }) }}</span><span v-if="result.insertId">Insert ID: {{ result.insertId }}</span></div>
-            <table v-else class="result-grid">
-              <thead><tr><th class="row-number">#</th><th v-for="(column, index) in result.columns" :key="`${column.name}:${index}`" :title="column.table"><button @click="toggleSort(index)"><span>{{ column.name }} <i v-if="sortColumn === index">{{ sortDirection === 'asc' ? '↑' : '↓' }}</i></span><small v-if="columnType(index)">{{ columnType(index) }}</small></button></th></tr></thead>
-              <tbody><tr v-for="(row, rowIndex) in displayRows" :key="rowIndex"><td class="row-number">{{ result.page * result.pageSize + rowIndex + 1 }}</td><td v-for="(cell, cellIndex) in row" :key="cellIndex" :class="{ null: cell == null, selected: selectedCell?.row === row && selectedCell.columnIndex === cellIndex }" :title="displayCell(cell)" @contextmenu="showCellContextMenu($event, row, rowIndex, cellIndex, cell)">{{ displayCell(cell) }}</td></tr></tbody>
+            <table v-else class="result-grid" :class="{ editable: canEditCells }">
+              <thead><tr><th class="row-number">#</th><th v-for="index in visibleColumnIndexes" :key="`${result.columns[index].name}:${index}`" :title="result.columns[index].table" :style="columnStyle(index)"><button :disabled="running || (workspaceMode === 'table' && Boolean(pendingChangeCount))" @click="toggleSort(index)"><span>{{ result.columns[index].name }} <i :class="{ active: sortColumn === index }">{{ sortColumn === index ? (sortDirection === 'asc' ? '↑' : '↓') : '↕' }}</i></span><small v-if="columnDetails(index)" :title="columnDetails(index)">{{ columnDetails(index) }}</small></button><span class="result-column-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-valuemin="64" aria-valuemax="2000" :aria-valuenow="columnWidths[columnWidthKey(index)]" :aria-label="result.columns[index].name" @pointerdown.prevent.stop="startColumnResize(index, $event)" @pointermove="resizeColumn" @pointerup="stopColumnResize" @pointercancel="stopColumnResize" @keydown="resizeColumnWithKeyboard(index, $event)"></span></th></tr></thead>
+              <tbody><tr v-for="(row, rowIndex) in displayRows" :key="`${activeTableName}:${rowIndex}`" :class="{ selected: editableRow(row)?.selected, inserted: editableRow(row) && !editableRow(row)?.original }"><td class="row-number"><button v-if="workspaceMode === 'table' && editableRow(row)" :class="{ active: editableRow(row)?.selected }" :aria-label="t('selectRow')" @click="toggleRowSelection(row)">{{ result.page * result.pageSize + rowIndex + 1 }}</button><template v-else>{{ result.page * result.pageSize + rowIndex + 1 }}</template></td><td v-for="cellIndex in visibleColumnIndexes" :key="cellIndex" :class="{ null: row[cellIndex] == null, selected: selectedCell?.row === row && selectedCell.columnIndex === cellIndex }" :style="columnStyle(cellIndex)" :title="displayCell(row[cellIndex])" @click="updateCellDetail(row, rowIndex, cellIndex, row[cellIndex])" @contextmenu="showCellContextMenu($event, row, rowIndex, cellIndex, row[cellIndex])"><input v-if="canEditCells || (canEditTable && !editableRow(row)?.original)" :value="row[cellIndex] == null ? '' : String(row[cellIndex])" @change="updateCell(row, cellIndex, $event)"><template v-else>{{ displayCell(row[cellIndex]) }}</template></td></tr></tbody>
             </table>
           </div>
           <section v-if="selectedCell && selectedCellDetail" class="cell-detail-panel">
@@ -474,6 +790,7 @@ onBeforeUnmount(() => {
         </section>
       </main>
     </div>
+    <input ref="csvInput" class="visually-hidden" type="file" accept=".csv,text/csv" @change="importCsv">
     <div v-if="cellContextMenu" class="database-cell-context-menu" role="menu" :style="{ left: `${cellContextMenu.x}px`, top: `${cellContextMenu.y}px` }" @pointerdown.stop>
       <button role="menuitem" @click="showFullCellData">{{ t('showFullData') }}</button>
     </div>

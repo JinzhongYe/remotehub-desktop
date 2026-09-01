@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { databaseCellDetail, databaseDisplayRows, databaseResultToCsv } from '../src/shared/database'
+import { databaseCellDetail, databaseDisplayRows, databaseResultToCsv, databaseSqlLiteral, parseDatabaseCsv } from '../src/shared/database'
 import { SqliteAdapter } from '../src/main/services/database/sqlite'
 
 describe('Phase 8 SQLite workspace', () => {
@@ -36,6 +36,12 @@ describe('Phase 8 SQLite workspace', () => {
     expect(databaseResultToCsv({
       fileName: 'devices.csv', columns: ['name', 'note'], rows: [['alpha', 'one, two'], ['"beta"', 'line\nbreak']]
     })).toBe('name,note\r\nalpha,"one, two"\r\n"""beta""","line\nbreak"')
+  })
+
+  it('imports quoted CSV values and safely quotes edited values', () => {
+    expect(parseDatabaseCsv('\uFEFFid,note\r\n1,"hello, ""world"""\r\n')).toEqual({ columns: ['id', 'note'], rows: [['1', 'hello, "world"']] })
+    expect(databaseSqlLiteral("O'Reilly")).toBe("'O''Reilly'")
+    expect(databaseSqlLiteral(null)).toBe('NULL')
   })
 
   it('filters and sorts the visible result page', () => {

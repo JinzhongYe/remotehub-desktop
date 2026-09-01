@@ -17,6 +17,7 @@ const editing = ref<Connection | null>(null)
 const groupDialogOpen = ref(false)
 const editingGroup = ref<Group | null>(null)
 const groupName = ref('')
+const fullscreen = ref(false)
 const appInfo = ref<{ name: string; version: string; platform: string; dataPath: string } | null>(null)
 type MessageKey = Parameters<typeof t>[0]
 const statusKey = ref<MessageKey>('initializing')
@@ -27,6 +28,7 @@ const shortcutModifier = computed(() => appInfo.value?.platform === 'darwin' ? '
 type Theme = 'light' | 'dark'
 const savedTheme = localStorage.getItem('remotehub.theme')
 const theme = ref<Theme>(savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+let removeFullscreenListener: (() => void) | undefined
 document.documentElement.dataset.theme = theme.value
 
 function toggleTheme(): void {
@@ -38,6 +40,7 @@ function toggleTheme(): void {
 
 onMounted(async () => {
   if (window.api) void window.api.app.setTheme(theme.value).catch(() => undefined)
+  removeFullscreenListener = window.api.app.onFullscreenChange((value) => { fullscreen.value = value })
   try {
     await connectionStore.load()
     workspace.restore(connectionStore.connections.map((connection) => connection.id))
@@ -48,7 +51,10 @@ onMounted(async () => {
   }
   window.addEventListener('keydown', handleShortcut)
 })
-onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleShortcut)
+  removeFullscreenListener?.()
+})
 
 function setStatus(key: MessageKey, values: Record<string, string | number> = {}): void {
   statusError.value = ''
@@ -186,7 +192,7 @@ async function removeGroup(group: Group): Promise<void> {
 </script>
 
 <template>
-  <div class="app-frame" :class="{ darwin: appInfo?.platform === 'darwin' }">
+  <div class="app-frame" :class="{ darwin: appInfo?.platform === 'darwin', fullscreen }">
     <header class="top-toolbar">
       <div class="brand"><img class="brand-mark" :src="appIcon" alt=""><div><strong>RemoteHub</strong><small>DESKTOP WORKBENCH</small></div></div>
       <div class="toolbar-context"><button class="toolbar-label" @click="workspace.activate('welcome')">{{ t('workspace') }}</button><span class="toolbar-separator">/</span><span>{{ connectionStore.selected?.name || t('noSelection') }}</span></div>
@@ -197,7 +203,7 @@ async function removeGroup(group: Group): Promise<void> {
       <main class="main-workspace"><WorkspaceShell :shortcut-modifier="shortcutModifier" /></main>
     </div>
     <footer class="status-bar"><span class="status-item"><span class="status-dot"></span>{{ statusText }}</span><span class="status-item">{{ appInfo?.platform || 'desktop' }} · {{ t('localOnly') }}</span><span class="status-item version">{{ appInfo?.version ? `v${appInfo.version}` : 'v0.1.0' }}</span></footer>
-    <ConnectionDialog :open="dialogOpen" :connection="editing" :groups="connectionStore.groups" :connections="connectionStore.connections" @close="dialogOpen = false" @save="saveConnection" />
+    <ConnectionDialog :open="dialogOpen" :connection="editing" :groups="connectionStore.groups" :connections="connectionStore.connections" :platform="appInfo?.platform" @close="dialogOpen = false" @save="saveConnection" />
     <div v-if="groupDialogOpen" class="modal-layer" @click.self="groupDialogOpen = false">
       <form class="connection-dialog" @submit.prevent="saveGroup">
         <div class="dialog-heading"><div><span class="eyebrow">{{ t('group') }}</span><h2>{{ editingGroup ? t('renameGroup') : t('newGroup') }}</h2></div><button type="button" class="icon-button" :aria-label="t('cancel')" @click="groupDialogOpen = false">×</button></div>

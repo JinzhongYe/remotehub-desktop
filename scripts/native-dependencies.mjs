@@ -34,6 +34,7 @@ export async function rebuildNativeDependencies({ appDir, electronVersion, platf
   // would require an additional Spectre-enabled Visual Studio toolchain.
   const usePtyPrebuild = hasPtyPrebuild(ptyDirectory, targetPlatform, arch)
   console.log(`node-pty: ${usePtyPrebuild ? 'using bundled Node-API prebuilds' : 'building for Electron'} (${targetPlatform}-${arch})`)
+  ensurePtyHelpersExecutable(ptyDirectory, targetPlatform, arch)
   await rebuild({
     buildPath: appDir,
     electronVersion: electronVersion || require('electron/package.json').version,

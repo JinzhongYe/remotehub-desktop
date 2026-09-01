@@ -85,7 +85,7 @@ export class MysqlAdapter implements DatabaseAdapter {
     try {
       const [rows] = await this.client.execute<RowDataPacket[][]>({
         sql: `SELECT COLUMN_NAME, ORDINAL_POSITION, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE,
-                     COLUMN_KEY, COLUMN_DEFAULT, EXTRA
+                     COLUMN_KEY, COLUMN_DEFAULT, EXTRA, CHARACTER_MAXIMUM_LENGTH, NUMERIC_SCALE, COLUMN_COMMENT
               FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
               ORDER BY ORDINAL_POSITION`,
@@ -102,7 +102,10 @@ export class MysqlAdapter implements DatabaseAdapter {
         nullable: String(row[4]).toUpperCase() === 'YES',
         key: row[5] ? String(row[5]) : undefined,
         defaultValue: row[6] == null ? null : serializeDatabaseValue(row[6]),
-        extra: row[7] ? String(row[7]) : undefined
+        extra: row[7] ? String(row[7]) : undefined,
+        length: row[8] == null ? undefined : safeNumber(row[8]),
+        scale: row[9] == null ? undefined : safeNumber(row[9]),
+        comment: row[10] ? String(row[10]) : undefined
       }))
     } catch (error) { throw mapMysqlError(error) }
   }

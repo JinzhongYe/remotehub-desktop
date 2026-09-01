@@ -11,6 +11,10 @@ export interface LocalShellStatusEvent {
   message?: string
 }
 
+export function localShellName(platform: string): string {
+  return platform === 'darwin' ? 'Zsh' : platform === 'win32' ? 'PowerShell' : platform === 'linux' ? 'Bash' : 'Shell'
+}
+
 export function localShellCommand(platform: string, environment: Record<string, string | undefined>): { command: string; args: string[] } {
   return platform === 'win32'
     ? { command: 'powershell.exe', args: ['-NoLogo'] }

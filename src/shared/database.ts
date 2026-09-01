@@ -32,6 +32,9 @@ export interface DatabaseColumn {
   key?: string
   defaultValue?: DatabaseCell
   extra?: string
+  length?: number
+  scale?: number
+  comment?: string
 }
 
 export interface DatabaseResultColumn {
@@ -120,6 +123,37 @@ export function databaseResultToCsv(input: DatabaseCsvExport): string {
   const width = input.columns.length
   if (!width || input.rows.some((row) => !Array.isArray(row) || row.length !== width)) throw databaseInputError('DATABASE_EXPORT_INVALID', 'Export rows do not match the columns')
   return [input.columns, ...input.rows].map((row) => row.map(csvCell).join(',')).join('\r\n')
+}
+
+export function parseDatabaseCsv(source: string): { columns: string[]; rows: DatabaseCell[][] } {
+  const records: string[][] = [['']]
+  let quoted = false
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index]
+    if (char === '"') {
+      if (quoted && source[index + 1] === '"') {
+        const row = records[records.length - 1]
+        row[row.length - 1] += '"'
+        index++
+      } else quoted = !quoted
+    } else if (char === ',' && !quoted) records.at(-1)!.push('')
+    else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && source[index + 1] === '\n') index++
+      records.push([''])
+    } else records.at(-1)![records.at(-1)!.length - 1] += char
+  }
+  if (quoted) throw databaseInputError('DATABASE_IMPORT_INVALID', 'CSV contains an unterminated quoted field')
+  while (records.length && records.at(-1)!.every((cell) => !cell)) records.pop()
+  const columns = (records.shift() || []).map((column, index) => (index === 0 ? column.replace(/^\uFEFF/, '') : column).trim())
+  if (!columns.length || columns.some((column) => !column)) throw databaseInputError('DATABASE_IMPORT_INVALID', 'CSV header is missing')
+  return { columns, rows: records.map((row) => columns.map((_, index) => row[index] ?? '')) }
+}
+
+export function databaseSqlLiteral(value: DatabaseCell): string {
+  if (value == null) return 'NULL'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : `'${String(value)}'`
+  if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
+  return `'${value.replaceAll("'", "''")}'`
 }
 
 export function databaseCellDetail(value: DatabaseCell): DatabaseCellDetail {

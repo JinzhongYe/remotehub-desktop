@@ -93,10 +93,11 @@ export class PostgresAdapter implements DatabaseAdapter {
     const tableName = validateIdentifier(table, 'table')
     try {
       const result = await this.client.query<{
-        name: string; ordinal: number; data_type: string; column_type: string; nullable: string; default_value: string | null; primary_key: boolean
+        name: string; ordinal: number; data_type: string; column_type: string; nullable: string; default_value: string | null; primary_key: boolean; length: number | null; scale: number | null; comment: string | null
       }>(`SELECT c.column_name AS name, c.ordinal_position AS ordinal, c.data_type,
           COALESCE(c.domain_name, c.udt_name) AS column_type, c.is_nullable AS nullable,
-          c.column_default AS default_value,
+          c.column_default AS default_value, c.character_maximum_length AS length, c.numeric_scale AS scale,
+          pg_catalog.col_description(format('%I.%I', c.table_schema, c.table_name)::regclass::oid, c.ordinal_position) AS comment,
           EXISTS (SELECT 1 FROM pg_catalog.pg_class t
             JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
             JOIN pg_catalog.pg_index i ON i.indrelid = t.oid AND i.indisprimary
@@ -112,7 +113,10 @@ export class PostgresAdapter implements DatabaseAdapter {
         nullable: row.nullable === 'YES',
         key: row.primary_key ? 'PRI' : undefined,
         defaultValue: row.default_value,
-        extra: row.default_value?.startsWith('nextval(') ? 'auto increment' : undefined
+        extra: row.default_value?.startsWith('nextval(') ? 'auto increment' : undefined,
+        length: row.length == null ? undefined : Number(row.length),
+        scale: row.scale == null ? undefined : Number(row.scale),
+        comment: row.comment || undefined
       }))
     } catch (error) { throw mapPostgresError(error) }
   }
