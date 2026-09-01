@@ -7,6 +7,7 @@ import type { CodexRateWindow, CodexStatus, CodexDailyUsage } from '../../shared
 import { withoutAnsiBackgrounds } from '../../shared/ansi'
 import type { ServerStatus, SshDataEvent, SshSessionStatus, SshStatusEvent } from '../../shared/ssh'
 import { t } from '../i18n'
+import UiIcon from './UiIcon.vue'
 
 const props = defineProps<{ connectionId: string; active: boolean; local?: boolean; sftpOpen?: boolean }>()
 const emit = defineEmits<{ toggleSftp: [] }>()
@@ -44,8 +45,8 @@ const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
 
 const terminalThemes: Record<'dark' | 'light', ITheme> = {
-  dark: { background: '#1a1b1d', foreground: '#e0e0e0', cursor: '#919292', black: '#000000', red: '#8c1a10', green: '#4aa22f', yellow: '#99972f', blue: '#0037da', magenta: '#a42aad', cyan: '#48a3b0', white: '#c0bfbf', brightBlack: '#666566', brightRed: '#d32d1f', brightGreen: '#63d33f', brightYellow: '#e6e34b', brightBlue: '#5b75ff', brightMagenta: '#d239de', brightCyan: '#67e2e3', brightWhite: '#e6e5e6', selectionBackground: '#6297e0', selectionForeground: '#ffffff', selectionInactiveBackground: '#7e7e7e' },
-  light: { background: '#ffffff', foreground: '#000000', cursor: '#1769aa', black: '#000000', red: '#8c1a10', green: '#4aa22f', yellow: '#99972f', blue: '#0037da', magenta: '#a42aad', cyan: '#48a3b0', white: '#c0bfbf', brightBlack: '#666566', brightRed: '#d32d1f', brightGreen: '#63d33f', brightYellow: '#e6e34b', brightBlue: '#5b75ff', brightMagenta: '#d239de', brightCyan: '#67e2e3', brightWhite: '#e6e5e6', selectionBackground: '#b9d7f0', selectionForeground: '#000000', selectionInactiveBackground: '#d7e6f2' }
+  dark: { background: '#0b0f14', foreground: '#d7dee7', cursor: '#79b8ff', black: '#111821', red: '#ff7b86', green: '#57d6a5', yellow: '#e5bd68', blue: '#79b8ff', magenta: '#c4a7ff', cyan: '#70cfff', white: '#c8d2dc', brightBlack: '#778493', brightRed: '#ff9aa2', brightGreen: '#7be6bd', brightYellow: '#f2d68d', brightBlue: '#a1ccff', brightMagenta: '#d7c4ff', brightCyan: '#9be2ff', brightWhite: '#f4f7fa', selectionBackground: '#25476b', selectionForeground: '#ffffff', selectionInactiveBackground: '#24303d' },
+  light: { background: '#ffffff', foreground: '#17202a', cursor: '#1769aa', black: '#111827', red: '#b42335', green: '#047857', yellow: '#8a5b00', blue: '#1769aa', magenta: '#6d28d9', cyan: '#036980', white: '#d6dde5', brightBlack: '#52606d', brightRed: '#d13b4b', brightGreen: '#16845f', brightYellow: '#9b6700', brightBlue: '#287ab8', brightMagenta: '#7c3aed', brightCyan: '#087f95', brightWhite: '#f4f6f8', selectionBackground: '#c7e1f5', selectionForeground: '#111827', selectionInactiveBackground: '#e0eaf2' }
 }
 
 function terminalTheme(): ITheme {
@@ -53,7 +54,7 @@ function terminalTheme(): ITheme {
 }
 
 function terminalContrastRatio(): number {
-  return document.documentElement.dataset.theme === 'light' ? 1 : 7
+  return 4.5
 }
 
 function writeTerminal(data: string): void {
@@ -349,7 +350,8 @@ onMounted(() => {
     convertEol: true,
     cursorBlink: true,
     fontFamily: '"JetBrains Mono", "Noto Sans SC", serif',
-    fontSize: 15,
+    fontSize: 14,
+    lineHeight: 1.2,
     fontWeight: '400',
     fontWeightBold: '600',
     minimumContrastRatio: terminalContrastRatio(),
@@ -408,16 +410,22 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="terminal-pane">
-    <div class="terminal-toolbar">
-      <span class="terminal-kind" :class="{ 'shell-kind': local }">{{ local ? '>_' : 'SSH' }}</span>
-      <span class="terminal-title">{{ local ? t('localShell') : 'Terminal' }}</span>
-      <span class="terminal-status" :class="status"><span class="status-dot"></span>{{ statusLabel() }}</span>
-      <span v-if="statusMessage" class="terminal-message" :title="statusMessage">{{ statusMessage }}</span>
-      <button v-if="!local" class="toolbar-button muted" :title="t(sftpOpen ? 'hideSftp' : 'showSftp')" @click="emit('toggleSftp')">⇄ SFTP</button>
-      <button v-if="!local" class="toolbar-button muted icon-only" :class="{ active: overviewOpen }" :title="t('serverOverview')" :aria-label="t('serverOverview')" :disabled="status !== 'connected'" @click="toggleOverview">▤</button>
-      <button v-if="status === 'connected'" class="toolbar-button muted icon-only codex-toolbar-button" :class="{ active: codexOpen }" :title="t('codexStatus')" :aria-label="t('codexStatus')" @click="toggleCodexStatus"><span aria-hidden="true">C</span></button>
-      <button v-if="!pendingFingerprint && (status === 'error' || status === 'closed')" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button>
-      <button v-else-if="local && status === 'connected'" class="toolbar-button muted" @click="disconnect">{{ t('disconnect') }}</button>
+    <div class="terminal-toolbar" role="toolbar" :aria-label="local ? t('localShell') : 'SSH Terminal'">
+      <div class="terminal-identity">
+        <span class="terminal-kind" :class="{ 'shell-kind': local }"><UiIcon :name="local ? 'command' : 'terminal'" :size="13" /><b>{{ local ? 'LOCAL' : 'SSH' }}</b></span>
+        <span class="terminal-title">{{ local ? t('localShell') : 'Terminal' }}</span>
+      </div>
+      <div class="terminal-session" role="status" aria-live="polite">
+        <span class="terminal-status" :class="status"><span class="status-dot"></span>{{ statusLabel() }}</span>
+        <span v-if="statusMessage" class="terminal-message" :title="statusMessage">{{ statusMessage }}</span>
+      </div>
+      <div class="terminal-actions">
+        <button v-if="!local" class="toolbar-button muted sftp-toggle" :class="{ active: sftpOpen }" :aria-pressed="sftpOpen" :title="t(sftpOpen ? 'hideSftp' : 'showSftp')" @click="emit('toggleSftp')"><UiIcon name="transfer" /> <span>SFTP</span></button>
+        <button v-if="!local" class="toolbar-button muted icon-only" :class="{ active: overviewOpen }" :title="t('serverOverview')" :aria-label="t('serverOverview')" :aria-pressed="overviewOpen" :disabled="status !== 'connected'" @click="toggleOverview"><UiIcon name="panel" /></button>
+        <button v-if="status === 'connected'" class="toolbar-button muted icon-only" :class="{ active: codexOpen }" :title="t('codexStatus')" :aria-label="t('codexStatus')" :aria-pressed="codexOpen" @click="toggleCodexStatus"><UiIcon name="gauge" /></button>
+        <button v-if="!pendingFingerprint && (status === 'error' || status === 'closed')" class="toolbar-button" @click="connect"><UiIcon name="refresh" /> <span>{{ t('reconnect') }}</span></button>
+        <button v-else-if="local && status === 'connected'" class="toolbar-button muted" @click="disconnect"><UiIcon name="power" /> <span>{{ t('disconnect') }}</span></button>
+      </div>
     </div>
     <div v-if="pendingFingerprint" class="terminal-host-key">
       <span>{{ t('hostKeyPrompt') }}</span><code>{{ t('hostKeyFingerprint') }}: {{ pendingFingerprint }}</code><button class="toolbar-button" @click="trustHostKey">{{ t('trustHostKey') }}</button>
@@ -425,7 +433,7 @@ onBeforeUnmount(() => {
     <div class="terminal-body">
       <div ref="terminalHost" class="terminal-host" @contextmenu.capture.prevent.stop="showContextMenu"></div>
       <aside v-if="overviewOpen && !local" class="server-overview">
-        <header><strong>{{ t('serverOverview') }}</strong><button :title="t('refresh')" :aria-label="t('refresh')" :disabled="overviewLoading" @click="refreshOverview">↻</button><button :aria-label="t('closeTab')" @click="toggleOverview">×</button></header>
+        <header><strong>{{ t('serverOverview') }}</strong><button :title="t('refresh')" :aria-label="t('refresh')" :disabled="overviewLoading" @click="refreshOverview"><UiIcon name="refresh" /></button><button :aria-label="t('closeTab')" @click="toggleOverview"><UiIcon name="close" /></button></header>
         <div v-if="overviewLoading && !overview" class="server-overview-state">{{ t('loading') }}</div>
         <div v-else-if="overviewError && !overview" class="server-overview-state error">{{ overviewError }}</div>
         <template v-if="overview">
@@ -451,7 +459,7 @@ onBeforeUnmount(() => {
         </template>
       </aside>
       <aside v-if="codexOpen" class="server-overview codex-overview">
-        <header><strong>{{ t('codexStatus') }}</strong><button :title="t('refresh')" :aria-label="t('refresh')" :disabled="codexLoading" @click="refreshCodexStatus">↻</button><button :aria-label="t('closeTab')" @click="toggleCodexStatus">×</button></header>
+        <header><strong>{{ t('codexStatus') }}</strong><button :title="t('refresh')" :aria-label="t('refresh')" :disabled="codexLoading" @click="refreshCodexStatus"><UiIcon name="refresh" /></button><button :aria-label="t('closeTab')" @click="toggleCodexStatus"><UiIcon name="close" /></button></header>
         <div v-if="codexLoading && !codexStatus" class="server-overview-state">{{ t('loading') }}</div>
         <div v-else-if="codexError && !codexStatus" class="server-overview-state error">{{ codexError }}</div>
         <template v-if="codexStatus">

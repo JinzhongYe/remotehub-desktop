@@ -9,6 +9,7 @@ import SftpPane from './SftpPane.vue'
 import SplitPane from './SplitPane.vue'
 import { t } from '../i18n'
 import ConnectionIcon from './ConnectionIcon.vue'
+import UiIcon from './UiIcon.vue'
 import appIcon from '../../../assets/remotehub.png'
 
 const DatabasePane = defineAsyncComponent(() => import('./DatabasePane.vue'))
@@ -40,7 +41,7 @@ function closeOpenMenus(event: PointerEvent): void {
 }
 
 function iconFor(type: string): string {
-  return type === 'terminal' ? '›_' : type === 'sftp' ? '⇄' : type === 'sql' ? 'SQL' : '□'
+  return type === 'terminal' ? 'terminal' : type === 'sftp' ? 'transfer' : type === 'sql' ? 'database' : 'grid'
 }
 
 function connectionFor(connectionId?: string): Connection | null {
@@ -128,19 +129,19 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
     <div class="tab-bar">
       <div class="tab-strip" role="tablist">
         <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryId === tab.id }" role="tab" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)">
-          <span class="tab-icon">{{ iconFor(tab.type) }}</span><span v-if="databaseConnected[tab.id]" class="status-dot" :title="t('connected')"></span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')">◆</span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)">×</button>
+          <span class="tab-icon"><UiIcon :name="iconFor(tab.type)" /></span><span v-if="databaseConnected[tab.id]" class="status-dot" :title="t('connected')"></span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')"><UiIcon name="pin" :size="12" /></span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)"><UiIcon name="close" :size="14" /></button>
         </div>
-        <button class="new-tab" :title="`${t('newTab')} (${shortcutModifier} T)`" :disabled="!workspace.activeTab?.connectionId" @click="openActiveAgain">＋</button>
+        <button class="new-tab" :title="`${t('newTab')} (${shortcutModifier} T)`" :aria-label="t('newTab')" :disabled="!workspace.activeTab?.connectionId" @click="openActiveAgain"><UiIcon name="plus" /></button>
       </div>
       <div class="tab-tools">
         <div class="view-switch" :aria-label="t('multiView')">
-          <button :class="{ active: workspace.viewCount === 1 }" :title="t('singleView')" @click="setViewCount(1)">▣</button>
-          <button :class="{ active: workspace.viewCount === 2 }" :title="t('doubleView')" :disabled="!workspace.canUseViewCount(2)" @click="setViewCount(2)">▥</button>
-          <button :class="{ active: workspace.viewCount === 4 }" :title="t('quadView')" :disabled="!workspace.canUseViewCount(4)" @click="setViewCount(4)">▦</button>
+          <button :class="{ active: workspace.viewCount === 1 }" :title="t('singleView')" :aria-label="t('singleView')" @click="setViewCount(1)"><UiIcon name="layoutOne" /></button>
+          <button :class="{ active: workspace.viewCount === 2 }" :title="t('doubleView')" :aria-label="t('doubleView')" :disabled="!workspace.canUseViewCount(2)" @click="setViewCount(2)"><UiIcon name="layoutTwo" /></button>
+          <button :class="{ active: workspace.viewCount === 4 }" :title="t('quadView')" :aria-label="t('quadView')" :disabled="!workspace.canUseViewCount(4)" @click="setViewCount(4)"><UiIcon name="layoutFour" /></button>
         </div>
-        <button :title="workspace.activeTab?.pinned ? t('unpinTab') : t('pinTab')" :disabled="!workspace.activeTab?.closable" @click="workspace.togglePinned()">{{ workspace.activeTab?.pinned ? '◆' : '◇' }}</button>
+        <button :title="workspace.activeTab?.pinned ? t('unpinTab') : t('pinTab')" :aria-label="workspace.activeTab?.pinned ? t('unpinTab') : t('pinTab')" :disabled="!workspace.activeTab?.closable" @click="workspace.togglePinned()"><UiIcon name="pin" /></button>
         <details class="tab-menu">
-          <summary :aria-label="t('tabActions')">•••</summary>
+          <summary :aria-label="t('tabActions')"><UiIcon name="more" /></summary>
           <div class="tab-menu-popover">
             <button :disabled="!workspace.activeTab?.closable" @click="workspace.closeOthers(); closeMenu($event)">{{ t('closeOthers') }}</button>
             <button :disabled="!workspace.activeTab?.closable" @click="workspace.closeRight(); closeMenu($event)">{{ t('closeRight') }}</button>
@@ -168,7 +169,7 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
       </div>
       <template v-for="tab in workspace.tabs" :key="tab.id">
         <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ primary: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id) }">
-          <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span>{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)">×</button></div>
+          <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span>{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)"><UiIcon name="close" /></button></div>
           <div class="workspace-pane-body">
             <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="[`sftp-${sftpPosition}`, { 'second-collapsed': !sftpOpen }]" :direction="sftpPosition === 'left' || sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="sftpPosition === 'left' || sftpPosition === 'top'" :initial="60">
               <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="sftpOpen" @toggle-sftp="toggleSftp" /></template>
@@ -180,14 +181,14 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
             <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" @connection-status="setDatabaseConnected(tab.id, $event)" />
             <div v-else class="workspace-placeholder">
               <div class="connection-overview">
-                <div class="overview-icon">{{ connectionFor(tab.connectionId)?.type === 'database' ? 'DB' : '›_' }}</div>
+                <div class="overview-icon"><UiIcon :name="connectionFor(tab.connectionId)?.type === 'database' ? 'database' : 'terminal'" :size="20" /></div>
                 <span class="status-dot"></span>
                 <div><span class="eyebrow">{{ t('workspaceReady') }}</span><h2>{{ connectionFor(tab.connectionId)?.name }}</h2><p>{{ connectionFor(tab.connectionId)?.host }}:{{ connectionFor(tab.connectionId)?.port }} · {{ connectionFor(tab.connectionId)?.type === 'database' ? connectionFor(tab.connectionId)?.databaseType : 'SSH' }}</p></div>
               </div>
               <div class="module-placeholders">
-                <button class="module-tile" disabled><span>›_</span><strong>Terminal</strong><small>{{ t('terminalPhase') }}</small></button>
-                <button class="module-tile" disabled><span>⇄</span><strong>SFTP</strong><small>{{ t('sftpPhase') }}</small></button>
-                <button class="module-tile" disabled><span>SQL</span><strong>Database</strong><small>{{ t('databasePhase') }}</small></button>
+                <button class="module-tile" disabled><span><UiIcon name="terminal" /></span><strong>Terminal</strong><small>{{ t('terminalPhase') }}</small></button>
+                <button class="module-tile" disabled><span><UiIcon name="transfer" /></span><strong>SFTP</strong><small>{{ t('sftpPhase') }}</small></button>
+                <button class="module-tile" disabled><span><UiIcon name="database" /></span><strong>Database</strong><small>{{ t('databasePhase') }}</small></button>
               </div>
             </div>
           </div>
