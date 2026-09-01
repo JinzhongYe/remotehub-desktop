@@ -10,6 +10,7 @@ import { t } from '../i18n'
 import { useConnectionStore } from '../stores/connection'
 
 const props = defineProps<{ connectionId: string }>()
+const emit = defineEmits<{ connectionStatus: [connected: boolean] }>()
 const connections = useConnectionStore()
 const connection = computed(() => connections.connections.find((item) => item.id === props.connectionId))
 const isPostgres = computed(() => connection.value?.databaseType === 'postgres')
@@ -47,7 +48,6 @@ const connecting = ref(true)
 const loadingSchema = ref(false)
 const running = ref(false)
 const errorMessage = ref('')
-const serverVersion = ref('')
 const sqlLastSql = ref('')
 const tableLastSql = ref<Record<string, string>>({})
 const cellContextMenu = ref<{ x: number; y: number; row: DatabaseCell[]; rowIndex: number; columnIndex: number; value: DatabaseCell } | null>(null)
@@ -101,7 +101,7 @@ const displayRows = computed(() => result.value?.kind === 'rows'
 const visibleColumnIndexes = computed(() => result.value?.kind === 'rows'
   ? result.value.columns.map((_, index) => index).filter((index) => !hiddenColumns.value[activeTableName.value]?.includes(result.value!.columns[index].name))
   : [])
-const canEditTable = computed(() => workspaceMode.value === 'table' && activeTable.value?.type === 'table' && !isSqlite.value && result.value?.kind === 'rows')
+const canEditTable = computed(() => workspaceMode.value === 'table' && activeTable.value?.type === 'table' && result.value?.kind === 'rows')
 const hasPrimaryKey = computed(() => (columnsByTable.value[activeTableName.value] || []).some((column) => column.key === 'PRI'))
 const canEditCells = computed(() => canEditTable.value && hasPrimaryKey.value)
 const selectedRowCount = computed(() => activeDraftRows.value.filter((row) => row.selected).length)
@@ -127,6 +127,7 @@ watch(result, () => {
   cellContextMenu.value = null
   selectedCell.value = null
 })
+watch(sessionId, (value) => emit('connectionStatus', Boolean(value)), { immediate: true })
 
 async function connect(): Promise<void> {
   connecting.value = true
@@ -140,7 +141,6 @@ async function connect(): Promise<void> {
       return
     }
     sessionId.value = connected.sessionId
-    serverVersion.value = connected.serverVersion
     databases.value = await window.api.database.listDatabases(connected.sessionId)
     selectedDatabase.value = connected.database && visibleDatabases.value.some((item) => item.name === connected.database)
       ? connected.database
@@ -539,7 +539,7 @@ async function saveChanges(): Promise<void> {
       const indexes = columns.map((_, index) => index).filter((index) => row.values[index] != null || metadata.find((item) => item.name === columns[index].name)?.extra !== 'auto increment')
       statements.push(indexes.length
         ? `INSERT INTO ${table} (${indexes.map((index) => quoteIdentifier(columns[index].name)).join(', ')}) VALUES (${indexes.map((index) => databaseSqlLiteral(row.values[index])).join(', ')})`
-        : isPostgres.value ? `INSERT INTO ${table} DEFAULT VALUES` : `INSERT INTO ${table} () VALUES ()`)
+        : isPostgres.value || isSqlite.value ? `INSERT INTO ${table} DEFAULT VALUES` : `INSERT INTO ${table} () VALUES ()`)
     } else if (!sameRow(row.values, row.original)) {
       const changed = columns.map((_, index) => index).filter((index) => row.values[index] !== row.original![index])
       statements.push(`UPDATE ${table} SET ${changed.map((index) => `${quoteIdentifier(columns[index].name)} = ${databaseSqlLiteral(row.values[index])}`).join(', ')} WHERE ${predicate(row.original)}`)
@@ -669,6 +669,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disposed = true
+  emit('connectionStatus', false)
   document.removeEventListener('pointerdown', closeContextMenus)
   themeObserver?.disconnect()
   editor?.destroy()
@@ -679,15 +680,10 @@ onBeforeUnmount(() => {
 <template>
   <section class="database-pane">
     <header class="database-toolbar">
-      <span class="database-kind">{{ isPostgres ? 'PG' : isSqlite ? 'SQ' : 'MY' }}</span>
-      <strong>{{ t(isPostgres ? 'postgresWorkspace' : isSqlite ? 'sqliteWorkspace' : 'mysqlWorkspace') }}</strong>
       <select v-if="!isPostgres" v-model="selectedDatabase" :disabled="!sessionId || connecting || running" @change="changeDatabase">
         <option v-if="!databases.length" value="">{{ t('noDatabase') }}</option>
         <option v-for="database in databases" :key="database.name" :value="database.name">{{ database.name }}{{ database.system ? ` · ${t('systemDatabase')}` : '' }}</option>
       </select>
-      <button class="toolbar-button muted icon-only" :title="t('refresh')" :aria-label="t('refresh')" :disabled="!sessionId || loadingSchema" @click="refreshSchema">↻</button>
-      <span class="database-server">{{ serverVersion }}</span>
-      <span class="terminal-status" :class="{ connecting, error: errorMessage && !sessionId }"><span class="status-dot"></span>{{ connecting ? t('connecting') : sessionId ? t('connected') : t('closed') }}</span>
       <button v-if="!sessionId && !connecting" class="toolbar-button" @click="connect">{{ t('reconnect') }}</button>
     </header>
     <div v-if="errorMessage" class="database-error"><span>{{ errorMessage }}</span><button class="icon-button" @click="errorMessage = ''">×</button></div>
@@ -784,7 +780,7 @@ onBeforeUnmount(() => {
         <section v-if="workspaceMode === 'table' || workspaceMode === 'sql'" class="result-section" :class="{ 'table-mode': workspaceMode === 'table' }">
           <div class="result-toolbar">
             <strong>{{ workspaceMode === 'table' && activeTable ? isPostgres ? `${activeTable.database}.${activeTable.name}` : activeTable.name : t('resultGrid') }}</strong>
-            <small>{{ pendingChangeCount && workspaceMode === 'table' ? t('pendingChanges', { count: pendingChangeCount }) : resultSummary }}</small>
+            <small v-if="workspaceMode !== 'table' || pendingChangeCount">{{ workspaceMode === 'table' ? t('pendingChanges', { count: pendingChangeCount }) : resultSummary }}</small>
             <label v-if="result?.kind === 'rows' && (workspaceMode === 'sql' || filterVisible)" class="row-filter"><span>⌕</span><input v-model="rowFilter" :placeholder="t('filterRows')"></label>
             <button class="toolbar-button muted icon-only" :title="t('refresh')" :aria-label="t('refresh')" :disabled="!result || running || (workspaceMode === 'table' && Boolean(pendingChangeCount))" @click="refreshResult">↻</button>
             <template v-if="workspaceMode === 'table'">

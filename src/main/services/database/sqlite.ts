@@ -15,8 +15,7 @@ export const sqliteAdapterFactory: DatabaseAdapterFactory = {
     if (!isAbsolute(connection.host) || connection.host.length > 4096) throw sqliteError('DATABASE_FILE_INVALID', 'Choose an absolute SQLite database file path')
     try {
       const BetterSqlite3Constructor = loadNativeModule('better-sqlite3') as BetterSqlite3
-      const client = new BetterSqlite3Constructor(connection.host, { readonly: true, fileMustExist: true })
-      client.pragma('query_only = ON')
+      const client = new BetterSqlite3Constructor(connection.host, { fileMustExist: true })
       const version = (client.prepare('SELECT sqlite_version() AS version').get() as { version?: string } | undefined)?.version || 'SQLite'
       return new SqliteAdapter(client, `SQLite ${version}`)
     } catch (error) { throw mapSqliteError(error) }
@@ -81,11 +80,20 @@ export class SqliteAdapter implements DatabaseAdapter {
     const request = normalizeQueryRequest(input)
     const startedAt = Date.now()
     const statementName = databaseStatement(request.sql)
-    const pageable = isPageableStatement(request.sql)
-    const sql = pageable ? buildPagedMysqlQuery(request.sql, request.page, request.pageSize) : stripFinalSemicolon(request.sql)
     try {
-      const statement = this.client.prepare(sql)
-      if (!statement.reader) throw sqliteError('DATABASE_READ_ONLY', 'SQLite workspaces only allow read-only queries')
+      const sourceSql = stripFinalSemicolon(request.sql)
+      const sourceStatement = this.client.prepare(sourceSql)
+      const pageable = sourceStatement.reader && isPageableStatement(request.sql)
+      const statement = pageable ? this.client.prepare(buildPagedMysqlQuery(request.sql, request.page, request.pageSize)) : sourceStatement
+      if (!statement.reader) {
+        const mutation = statement.run()
+        return {
+          kind: 'mutation', columns: [], rows: [], page: 0, pageSize: request.pageSize, hasMore: false,
+          affectedRows: mutation.changes, changedRows: mutation.changes,
+          insertId: statementName === 'INSERT' || statementName === 'REPLACE' ? String(mutation.lastInsertRowid) : undefined,
+          warningStatus: 0, durationMs: Date.now() - startedAt, statement: statementName
+        }
+      }
       const columns: DatabaseResultColumn[] = statement.columns().map((column) => ({ name: column.name, table: column.table || undefined, type: column.type || undefined }))
       const allRows = statement.raw(true).all() as unknown[][]
       const hasMore = pageable && allRows.length > request.pageSize

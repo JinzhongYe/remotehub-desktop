@@ -18,6 +18,7 @@ const workspace = useWorkspaceStore()
 const connections = useConnectionStore()
 const sftpPosition = ref<SftpPosition>(normalizeSftpPosition(localStorage.getItem('remotehub.sftpPosition')))
 const sftpOpen = ref(localStorage.getItem('remotehub.sftpOpen') !== 'false')
+const databaseConnected = ref<Record<string, boolean>>({})
 const workspaceContent = ref<HTMLElement | null>(null)
 const workspaceSplitX = ref(50)
 const workspaceSplitY = ref(50)
@@ -44,6 +45,11 @@ function iconFor(type: string): string {
 
 function connectionFor(connectionId?: string): Connection | null {
   return connections.connections.find((connection) => connection.id === connectionId) || null
+}
+
+function setDatabaseConnected(tabId: string, connected: boolean): void {
+  if (connected) databaseConnected.value[tabId] = true
+  else delete databaseConnected.value[tabId]
 }
 
 function openConnection(connection: Connection): void {
@@ -122,7 +128,7 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
     <div class="tab-bar">
       <div class="tab-strip" role="tablist">
         <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryId === tab.id }" role="tab" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)">
-          <span class="tab-icon">{{ iconFor(tab.type) }}</span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')">◆</span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)">×</button>
+          <span class="tab-icon">{{ iconFor(tab.type) }}</span><span v-if="databaseConnected[tab.id]" class="status-dot" :title="t('connected')"></span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')">◆</span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)">×</button>
         </div>
         <button class="new-tab" :title="`${t('newTab')} (${shortcutModifier} T)`" :disabled="!workspace.activeTab?.connectionId" @click="openActiveAgain">＋</button>
       </div>
@@ -171,7 +177,7 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
             <TerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'shell'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" local />
             <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />
             <SftpPane v-else-if="tab.type === 'sftp' && (connectionFor(tab.connectionId)?.type === 'ssh' || connectionFor(tab.connectionId)?.type === 'ftp')" :connection-id="tab.connectionId" :protocol="connectionFor(tab.connectionId)?.type === 'ftp' ? 'ftp' : 'sftp'" />
-            <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" />
+            <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" @connection-status="setDatabaseConnected(tab.id, $event)" />
             <div v-else class="workspace-placeholder">
               <div class="connection-overview">
                 <div class="overview-icon">{{ connectionFor(tab.connectionId)?.type === 'database' ? 'DB' : '›_' }}</div>

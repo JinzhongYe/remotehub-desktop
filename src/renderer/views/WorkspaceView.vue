@@ -8,6 +8,7 @@ import { useWorkspaceStore } from '../stores/workspace'
 import type { Connection, ConnectionInput } from '../../shared/types'
 import type { Group } from '../../shared/types'
 import { locale, t, toggleLocale } from '../i18n'
+import { confirmDialog } from '../dialog'
 import appIcon from '../../../assets/remotehub.png'
 
 const connectionStore = useConnectionStore()
@@ -99,7 +100,7 @@ async function saveConnection(input: ConnectionInput, credential?: string, clear
 }
 
 async function removeConnection(connection: Connection): Promise<void> {
-  if (!window.confirm(t('deleteConnectionConfirm', { name: connection.name }))) return
+  if (!await confirmDialog({ title: t('confirmTitle'), message: t('deleteConnectionConfirm', { name: connection.name }), confirmText: t('remove'), danger: true })) return
   try {
     await connectionStore.remove(connection.id)
     workspace.removeConnection(connection.id)
@@ -185,7 +186,7 @@ async function saveGroup(): Promise<void> {
 }
 
 async function removeGroup(group: Group): Promise<void> {
-  if (window.confirm(t('deleteGroupConfirm', { name: group.name }))) try { await connectionStore.deleteGroup(group.id) } catch (error) { setError(error, 'saveFailed') }
+  if (await confirmDialog({ title: t('confirmTitle'), message: t('deleteGroupConfirm', { name: group.name }), confirmText: t('remove'), danger: true })) try { await connectionStore.deleteGroup(group.id) } catch (error) { setError(error, 'saveFailed') }
 }
 </script>
 

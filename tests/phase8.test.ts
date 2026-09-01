@@ -3,7 +3,7 @@ import { databaseCellDetail, databaseDisplayRows, databaseResultToCsv, databaseS
 import { SqliteAdapter } from '../src/main/services/database/sqlite'
 
 describe('Phase 8 SQLite workspace', () => {
-  it('exposes schema with bounded pages and blocks writes', async () => {
+  it('exposes schema with bounded pages and supports writes', async () => {
     const database = {
       pragma: () => [{ name: 'main' }],
       prepare: (sql: string) => ({
@@ -14,7 +14,8 @@ describe('Phase 8 SQLite workspace', () => {
               { cid: 1, name: 'name', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 }
             ] : [],
         columns: () => [{ name: 'id', table: 'devices', type: 'INTEGER' }, { name: 'name', table: 'devices', type: 'TEXT' }],
-        raw: () => ({ all: () => [[1, 'alpha'], [2, 'beta']] })
+        raw: () => ({ all: () => [[1, 'alpha'], [2, 'beta']] }),
+        run: () => ({ changes: 1, lastInsertRowid: 3 })
       }),
       close: () => undefined
     }
@@ -28,7 +29,9 @@ describe('Phase 8 SQLite workspace', () => {
     await expect(adapter.query({ sql: 'SELECT * FROM devices ORDER BY id', pageSize: 1 })).resolves.toMatchObject({
       kind: 'rows', rows: [[1, 'alpha']], hasMore: true
     })
-    await expect(adapter.query({ sql: "INSERT INTO devices VALUES (3, 'gamma')" })).rejects.toMatchObject({ code: 'DATABASE_READ_ONLY' })
+    await expect(adapter.query({ sql: "INSERT INTO devices VALUES (3, 'gamma')" })).resolves.toMatchObject({
+      kind: 'mutation', affectedRows: 1, insertId: '3'
+    })
     adapter.close()
   })
 

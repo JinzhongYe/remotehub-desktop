@@ -15,6 +15,10 @@ export function registerAppIpc(): void {
     return { ok: true }
   })
   ipcMain.handle('app:readText', () => clipboard.readText().slice(0, 1024 * 1024))
+  ipcMain.handle('app:confirmClose', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.destroy()
+    return { ok: true }
+  })
   ipcMain.handle('app:setTheme', (event, theme: string) => {
     if (theme !== 'dark' && theme !== 'light') throw new Error('Theme is invalid')
     const window = BrowserWindow.fromWebContents(event.sender)

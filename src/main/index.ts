@@ -58,6 +58,10 @@ async function createWindow(): Promise<void> {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('app:fullscreen-changed', true))
   mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('app:fullscreen-changed', false))
+  if (!smokeDirectory) mainWindow.on('close', (event) => {
+    event.preventDefault()
+    mainWindow?.webContents.send('app:close-requested')
+  })
   if (!app.isPackaged && app.commandLine.hasSwitch('dev')) {
     await mainWindow.loadURL('http://127.0.0.1:5173')
     mainWindow.webContents.openDevTools({ mode: 'detach' })

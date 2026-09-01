@@ -105,7 +105,7 @@ interface Connection {
 - 首次 SSH 连接必须确认 SHA-256 Host Key 指纹；后续指纹变化会阻断连接，修改主机或端口时清除旧指纹。
 - 默认本地优先，远程数据不自动上传云端。
 - 连接名、主机、端口、SQL 和文件路径在 Main 进程再次校验。
-- SQLite 文件使用 `readonly + query_only` 双重保护；CSV 只能写入用户通过系统对话框选定的位置。
+- SQLite 文件支持查询和写入；CSV 只能写入用户通过系统对话框选定的位置。
 
 ## Phase 0 运行路径
 

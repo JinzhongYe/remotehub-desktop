@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SftpEntry, SftpQueueResult, SftpTransferItem, SftpTransferStatus } from '../../shared/sftp'
 import { fileIcon, joinRemotePath, parentRemotePath, selectSftpPaths, transferProgress } from '../../shared/sftp'
 import { t } from '../i18n'
+import { confirmDialog } from '../dialog'
 import SplitPane from './SplitPane.vue'
 
 type SftpPosition = 'right' | 'left' | 'top' | 'bottom'
@@ -36,6 +37,8 @@ const renamingEntry = ref<SftpEntry | null>(null)
 const renameName = ref('')
 const editor = ref<{ entry: SftpEntry; content: string; modifiedAt: number } | null>(null)
 const editorSaving = ref(false)
+const creatingDirectory = ref(false)
+const directoryName = ref('')
 let removeTransferListener: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
@@ -208,11 +211,17 @@ function setPosition(position: SftpPosition, event: MouseEvent): void {
   ;(event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')
 }
 
-async function createDirectory(): Promise<void> {
-  const name = window.prompt(t('folderName'))?.trim()
+function createDirectory(): void {
+  directoryName.value = ''
+  creatingDirectory.value = true
+}
+
+async function submitDirectory(): Promise<void> {
+  const name = directoryName.value.trim()
   if (!name || !sessionId.value) return
   try {
     await remoteApi.value.mkdir(sessionId.value, joinRemotePath(path.value, name))
+    creatingDirectory.value = false
     await refresh()
   } catch (error) { showError(error) }
 }
@@ -260,7 +269,7 @@ async function removeEntry(entry: SftpEntry): Promise<void> {
 async function removeEntries(items: SftpEntry[]): Promise<void> {
   if (!sessionId.value || !items.length) return
   const names = items.slice(0, 3).map((entry) => entry.name).join(', ') + (items.length > 3 ? ` (+${items.length - 3})` : '')
-  if (!window.confirm(t('deleteRemoteConfirm', { name: names }))) return
+  if (!await confirmDialog({ title: t('confirmTitle'), message: t('deleteRemoteConfirm', { name: names }), confirmText: t('remove'), danger: true })) return
   try {
     await Promise.all(items.map((entry) => remoteApi.value.remove(sessionId.value, entry.path, entry.type)))
   } catch (error) { showError(error) } finally { await refresh() }
@@ -281,7 +290,7 @@ async function queueUploads(paths: string[]): Promise<void> {
   try {
     let result: SftpQueueResult = await remoteApi.value.enqueueUploads(sessionId.value, paths, path.value, false)
     if (result.conflicts.length) {
-      if (!confirmOverwrite(result)) return
+      if (!await confirmOverwrite(result)) return
       result = await remoteApi.value.enqueueUploads(sessionId.value, paths, path.value, true)
     }
     transferPanelOpen.value = true
@@ -337,17 +346,17 @@ async function download(input: SftpEntry | SftpEntry[]): Promise<void> {
       if (result.conflicts.length) pending.push({ entry, result })
     }
     const conflicts = pending.flatMap(({ result }) => result.conflicts)
-    if (conflicts.length && confirmOverwrite({ transferIds: [], conflicts })) {
+    if (conflicts.length && await confirmOverwrite({ transferIds: [], conflicts })) {
       for (const { entry } of pending) await remoteApi.value.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, true)
     }
     transferPanelOpen.value = true
   } catch (error) { showError(error) }
 }
 
-function confirmOverwrite(result: SftpQueueResult): boolean {
+function confirmOverwrite(result: SftpQueueResult): Promise<boolean> {
   const examples = result.conflicts.slice(0, 3).map((item) => `• ${item.name}`).join('\n')
   const remaining = result.conflicts.length > 3 ? `\n${t('andMore', { count: result.conflicts.length - 3 })}` : ''
-  return window.confirm(`${t('overwriteConfirm', { count: result.conflicts.length })}\n\n${examples}${remaining}`)
+  return confirmDialog({ title: t('overwriteTitle'), message: `${t('overwriteConfirm', { count: result.conflicts.length })}\n\n${examples}${remaining}`, confirmText: t('overwrite') })
 }
 
 async function pauseOrResume(item: SftpTransferItem): Promise<void> {
@@ -494,6 +503,13 @@ function closeEntryMenu(): void {
     <div v-if="entryMenu" class="sftp-context-menu" :style="{ left: `${entryMenu.x}px`, top: `${entryMenu.y}px` }" @pointerdown.stop>
       <button v-if="entryMenu.side === 'local'" @click="runEntryAction('upload')">⇧ {{ t('upload') }}</button>
       <template v-else><button v-if="selectedEntries('remote').length === 1 && entryMenu.entry.type === 'file'" @click="runEntryAction('open')">{{ t('openFile') }}</button><button @click="runEntryAction('download')">⇩ {{ t('download') }}</button><button v-if="selectedEntries('remote').length === 1" @click="runEntryAction('rename')">{{ t('rename') }}</button><button class="danger" @click="runEntryAction('remove')">{{ t('remove') }}</button></template>
+    </div>
+    <div v-if="creatingDirectory" class="modal-layer" @click.self="creatingDirectory = false">
+      <form class="connection-dialog compact-dialog" @submit.prevent="submitDirectory">
+        <div class="dialog-heading"><div><span class="eyebrow">{{ protocolName }}</span><h2>{{ t('newFolder') }}</h2></div><button type="button" class="icon-button" :aria-label="t('cancel')" @click="creatingDirectory = false">×</button></div>
+        <label class="field"><span>{{ t('folderName') }}</span><input v-model="directoryName" required maxlength="255" autofocus></label>
+        <div class="dialog-actions"><button type="button" class="button secondary" @click="creatingDirectory = false">{{ t('cancel') }}</button><button type="submit" class="button primary">{{ t('newFolder') }}</button></div>
+      </form>
     </div>
     <div v-if="renamingEntry" class="modal-layer" @click.self="renamingEntry = null">
       <form class="connection-dialog" @submit.prevent="submitRename">

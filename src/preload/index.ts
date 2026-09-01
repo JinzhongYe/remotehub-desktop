@@ -46,6 +46,12 @@ const api = {
     chooseUploadFolder: () => ipcRenderer.invoke('app:chooseUploadFolder'),
     chooseDownloadPath: (defaultName: string) => ipcRenderer.invoke('app:chooseDownloadPath', defaultName),
     chooseDownloadDirectory: () => ipcRenderer.invoke('app:chooseDownloadDirectory'),
+    confirmClose: () => ipcRenderer.invoke('app:confirmClose'),
+    onCloseRequest: (listener: () => void) => {
+      const handler = (): void => listener()
+      ipcRenderer.on('app:close-requested', handler)
+      return () => ipcRenderer.removeListener('app:close-requested', handler)
+    },
     onFullscreenChange: (listener: (fullscreen: boolean) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, fullscreen: boolean): void => listener(fullscreen)
       ipcRenderer.on('app:fullscreen-changed', handler)

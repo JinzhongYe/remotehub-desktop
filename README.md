@@ -46,7 +46,7 @@ MySQL 连接选择 `Database` 和 `MySQL · Phase 6`，填写主机、端口、�
 
 PostgreSQL 连接选择 `PostgreSQL · Phase 7`，可配置 SSL 模式和一个已有 SSH 连接作为隧道。隧道连接必须先单独打开一次并信任 Host Key；数据库工作区沿用同一套 SQL UI，以 Schema 作为左侧结构浏览层级，并通过服务端游标分页。
 
-SQLite 连接选择 `SQLite · Phase 8` 并选取本地 `.db`、`.sqlite` 或 `.sqlite3` 文件。文件始终以 `readonly + query_only` 模式打开，只允许返回结果的查询；Result Grid 的“导出当前页”会通过系统保存对话框写入 UTF-8 CSV。
+SQLite 连接选择 `SQLite · Phase 8` 并选取本地 `.db`、`.sqlite` 或 `.sqlite3` 文件，支持查询和写入；Result Grid 的“导出当前页”会通过系统保存对话框写入 UTF-8 CSV。
 
 ## 校验与构建
 
