@@ -4,6 +4,7 @@ import { Terminal, type ITheme } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 import type { CodexRateWindow, CodexStatus, CodexDailyUsage } from '../../shared/codex'
+import { withoutAnsiBackgrounds } from '../../shared/ansi'
 import type { ServerStatus, SshDataEvent, SshSessionStatus, SshStatusEvent } from '../../shared/ssh'
 import { t } from '../i18n'
 
@@ -38,6 +39,7 @@ let removeContextMenuListener: (() => void) | undefined
 let resizeObserver: ResizeObserver | undefined
 let themeObserver: MutationObserver | undefined
 let codexRefreshTimer: number | undefined
+let pendingTerminalEscape = ''
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
 
@@ -48,6 +50,17 @@ const terminalThemes: Record<'dark' | 'light', ITheme> = {
 
 function terminalTheme(): ITheme {
   return terminalThemes[document.documentElement.dataset.theme === 'light' ? 'light' : 'dark']
+}
+
+function writeTerminal(data: string): void {
+  if (document.documentElement.dataset.theme !== 'light') {
+    terminal?.write(pendingTerminalEscape + data)
+    pendingTerminalEscape = ''
+    return
+  }
+  const filtered = withoutAnsiBackgrounds(pendingTerminalEscape + data)
+  pendingTerminalEscape = filtered.remainder
+  terminal?.write(filtered.output)
 }
 
 const statusLabel = (): string => {
@@ -68,7 +81,7 @@ function handleData(event: SshDataEvent): void {
     }
     return
   }
-  terminal?.write(event.data)
+  writeTerminal(event.data)
 }
 
 function handleStatus(event: SshStatusEvent): void {
@@ -83,7 +96,7 @@ function handleStatus(event: SshStatusEvent): void {
 
 function flushPending(id: string): void {
   const queued = pendingData.get(id) || []
-  queued.forEach((data) => terminal?.write(data))
+  queued.forEach(writeTerminal)
   const previousStatus = pendingStatus.get(id)
   if (previousStatus) {
     status.value = previousStatus.status
@@ -118,6 +131,7 @@ async function connect(): Promise<void> {
   codexError.value = ''
   pendingData.clear()
   pendingStatus.clear()
+  pendingTerminalEscape = ''
   terminal?.clear()
   try {
     const result = props.local ? await window.api.shell.connect(props.connectionId) : await window.api.ssh.connect(props.connectionId)
@@ -331,7 +345,10 @@ onMounted(() => {
     convertEol: true,
     cursorBlink: true,
     fontFamily: 'Cascadia Mono, Consolas, monospace',
-    fontSize: 13,
+    fontSize: 15,
+    fontWeight: '500',
+    fontWeightBold: '700',
+    minimumContrastRatio: 4.5,
     theme: terminalTheme(),
     scrollback: 5000
   })

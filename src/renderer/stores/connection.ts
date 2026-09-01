@@ -15,7 +15,6 @@ export const useConnectionStore = defineStore('connections', () => {
     return connections.value.filter((item) => [item.name, item.host, item.database, item.databaseType].filter(Boolean).join(' ').toLocaleLowerCase().includes(query))
   })
   const selected = computed(() => connections.value.find((item) => item.id === selectedId.value) || null)
-  const recentConnections = computed(() => connections.value.filter((item) => item.lastConnectedAt).sort((a, b) => (b.lastConnectedAt || 0) - (a.lastConnectedAt || 0)).slice(0, 5))
 
   async function load(): Promise<void> {
     loading.value = true
@@ -104,10 +103,5 @@ export const useConnectionStore = defineStore('connections', () => {
     selectedId.value = id
   }
 
-  function markRecent(id: string): void {
-    const item = connections.value.find((connection) => connection.id === id)
-    if (item) item.lastConnectedAt = Date.now()
-  }
-
-  return { connections, groups, selectedId, search, loading, filteredConnections, selected, recentConnections, load, save, remove, duplicate, importConnections, exportConnections, move, test, saveGroup, deleteGroup, select, markRecent }
+  return { connections, groups, selectedId, search, loading, filteredConnections, selected, load, save, remove, duplicate, importConnections, exportConnections, move, test, saveGroup, deleteGroup, select }
 })

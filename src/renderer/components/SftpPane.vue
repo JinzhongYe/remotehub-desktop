@@ -9,8 +9,10 @@ type SftpPosition = 'right' | 'left' | 'top' | 'bottom'
 type LocalEntry = Pick<SftpEntry, 'name' | 'path' | 'type' | 'size' | 'modifiedAt'>
 type LocalDirectory = { path: string; parentPath: string; entries: LocalEntry[] }
 
-const props = defineProps<{ connectionId: string; embedded?: boolean; position?: SftpPosition }>()
+const props = defineProps<{ connectionId: string; embedded?: boolean; position?: SftpPosition; protocol?: 'sftp' | 'ftp' }>()
 const emit = defineEmits<{ position: [position: SftpPosition] }>()
+const protocolName = computed(() => props.protocol === 'ftp' ? 'FTP' : 'SFTP')
+const remoteApi = computed(() => props.protocol === 'ftp' ? window.api.ftp : window.api.sftp)
 
 const sessionId = ref('')
 const path = ref('/')
@@ -90,25 +92,25 @@ async function connect(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   pendingFingerprint.value = ''
-  if (sessionId.value) await window.api.sftp.disconnect(sessionId.value).catch(() => undefined)
+  if (sessionId.value) await remoteApi.value.disconnect(sessionId.value).catch(() => undefined)
   sessionId.value = ''
   transfers.value = []
   selectedRemotePaths.value = []
   remoteSelectionAnchor = ''
   try {
-    const result = await window.api.sftp.connect(props.connectionId)
+    const result = await remoteApi.value.connect(props.connectionId)
     if (result.trustRequired) {
       pendingFingerprint.value = result.fingerprint
       return
     }
     if (disposed) {
-      await window.api.sftp.disconnect(result.sessionId).catch(() => undefined)
+      await remoteApi.value.disconnect(result.sessionId).catch(() => undefined)
       return
     }
     sessionId.value = result.sessionId
     path.value = result.homePath
     pathInput.value = result.homePath
-    transfers.value = await window.api.sftp.listTransfers(result.sessionId)
+    transfers.value = await remoteApi.value.listTransfers(result.sessionId)
     await refresh()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('sftpUnavailable')
@@ -132,7 +134,7 @@ async function refresh(nextPath = path.value): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    entries.value = await window.api.sftp.list(sessionId.value, nextPath)
+    entries.value = await remoteApi.value.list(sessionId.value, nextPath)
     selectedRemotePaths.value = retainSelection(selectedRemotePaths.value, entries.value)
     if (!selectedRemotePaths.value.includes(remoteSelectionAnchor)) remoteSelectionAnchor = ''
     path.value = nextPath
@@ -210,7 +212,7 @@ async function createDirectory(): Promise<void> {
   const name = window.prompt(t('folderName'))?.trim()
   if (!name || !sessionId.value) return
   try {
-    await window.api.sftp.mkdir(sessionId.value, joinRemotePath(path.value, name))
+    await remoteApi.value.mkdir(sessionId.value, joinRemotePath(path.value, name))
     await refresh()
   } catch (error) { showError(error) }
 }
@@ -226,7 +228,7 @@ async function submitRename(): Promise<void> {
   const name = renameName.value.trim()
   if (!entry || !name || name === entry.name || !sessionId.value) return
   try {
-    await window.api.sftp.rename(sessionId.value, entry.path, joinRemotePath(parentRemotePath(entry.path), name))
+    await remoteApi.value.rename(sessionId.value, entry.path, joinRemotePath(parentRemotePath(entry.path), name))
     renamingEntry.value = null
     await refresh()
   } catch (error) { showError(error) }
@@ -236,7 +238,7 @@ async function openRemoteFile(entry: SftpEntry): Promise<void> {
   if (!sessionId.value || entry.type !== 'file') return
   errorMessage.value = ''
   try {
-    const result = await window.api.sftp.readText(sessionId.value, entry.path)
+    const result = await remoteApi.value.readText(sessionId.value, entry.path)
     editor.value = { entry, ...result }
   } catch (error) { showError(error) }
 }
@@ -245,7 +247,7 @@ async function saveRemoteFile(): Promise<void> {
   if (!sessionId.value || !editor.value || editorSaving.value) return
   editorSaving.value = true
   try {
-    await window.api.sftp.writeText(sessionId.value, editor.value.entry.path, editor.value.content, editor.value.modifiedAt)
+    await remoteApi.value.writeText(sessionId.value, editor.value.entry.path, editor.value.content, editor.value.modifiedAt)
     editor.value = null
     await refresh()
   } catch (error) { showError(error) } finally { editorSaving.value = false }
@@ -260,7 +262,7 @@ async function removeEntries(items: SftpEntry[]): Promise<void> {
   const names = items.slice(0, 3).map((entry) => entry.name).join(', ') + (items.length > 3 ? ` (+${items.length - 3})` : '')
   if (!window.confirm(t('deleteRemoteConfirm', { name: names }))) return
   try {
-    await Promise.all(items.map((entry) => window.api.sftp.remove(sessionId.value, entry.path, entry.type)))
+    await Promise.all(items.map((entry) => remoteApi.value.remove(sessionId.value, entry.path, entry.type)))
   } catch (error) { showError(error) } finally { await refresh() }
 }
 
@@ -277,10 +279,10 @@ async function chooseUploadFolder(): Promise<void> {
 async function queueUploads(paths: string[]): Promise<void> {
   if (!sessionId.value) return
   try {
-    let result: SftpQueueResult = await window.api.sftp.enqueueUploads(sessionId.value, paths, path.value, false)
+    let result: SftpQueueResult = await remoteApi.value.enqueueUploads(sessionId.value, paths, path.value, false)
     if (result.conflicts.length) {
       if (!confirmOverwrite(result)) return
-      result = await window.api.sftp.enqueueUploads(sessionId.value, paths, path.value, true)
+      result = await remoteApi.value.enqueueUploads(sessionId.value, paths, path.value, true)
     }
     transferPanelOpen.value = true
     if (!result.transferIds.length) await refresh()
@@ -331,12 +333,12 @@ async function download(input: SftpEntry | SftpEntry[]): Promise<void> {
   try {
     const pending: { entry: SftpEntry; result: SftpQueueResult }[] = []
     for (const entry of items) {
-      const result = await window.api.sftp.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, false)
+      const result = await remoteApi.value.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, false)
       if (result.conflicts.length) pending.push({ entry, result })
     }
     const conflicts = pending.flatMap(({ result }) => result.conflicts)
     if (conflicts.length && confirmOverwrite({ transferIds: [], conflicts })) {
-      for (const { entry } of pending) await window.api.sftp.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, true)
+      for (const { entry } of pending) await remoteApi.value.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, true)
     }
     transferPanelOpen.value = true
   } catch (error) { showError(error) }
@@ -352,26 +354,26 @@ async function pauseOrResume(item: SftpTransferItem): Promise<void> {
   if (!sessionId.value) return
   try {
     const updated = item.status === 'paused'
-      ? await window.api.sftp.resumeTransfer(sessionId.value, item.transferId)
-      : await window.api.sftp.pauseTransfer(sessionId.value, item.transferId)
+      ? await remoteApi.value.resumeTransfer(sessionId.value, item.transferId)
+      : await remoteApi.value.pauseTransfer(sessionId.value, item.transferId)
     upsertTransfer(updated)
   } catch (error) { showError(error) }
 }
 
 async function cancelTransfer(item: SftpTransferItem): Promise<void> {
   if (!sessionId.value) return
-  try { upsertTransfer(await window.api.sftp.cancelTransfer(sessionId.value, item.transferId)) } catch (error) { showError(error) }
+  try { upsertTransfer(await remoteApi.value.cancelTransfer(sessionId.value, item.transferId)) } catch (error) { showError(error) }
 }
 
 async function retryTransfer(item: SftpTransferItem): Promise<void> {
   if (!sessionId.value) return
-  try { upsertTransfer(await window.api.sftp.retryTransfer(sessionId.value, item.transferId)) } catch (error) { showError(error) }
+  try { upsertTransfer(await remoteApi.value.retryTransfer(sessionId.value, item.transferId)) } catch (error) { showError(error) }
 }
 
 async function clearFinished(): Promise<void> {
   if (!sessionId.value) return
   try {
-    await window.api.sftp.clearFinishedTransfers(sessionId.value)
+    await remoteApi.value.clearFinishedTransfers(sessionId.value)
     transfers.value = transfers.value.filter((item) => item.status === 'queued' || item.status === 'running' || item.status === 'paused')
   } catch (error) { showError(error) }
 }
@@ -401,7 +403,7 @@ function canCancel(item: SftpTransferItem): boolean {
 }
 
 onMounted(() => {
-  removeTransferListener = window.api.sftp.onTransfer(transferEvent)
+  removeTransferListener = remoteApi.value.onTransfer(transferEvent)
   document.addEventListener('pointerdown', closeEntryMenu)
   void refreshLocal()
   void connect()
@@ -412,7 +414,7 @@ onBeforeUnmount(() => {
   if (refreshTimer) clearTimeout(refreshTimer)
   removeTransferListener?.()
   document.removeEventListener('pointerdown', closeEntryMenu)
-  if (sessionId.value) void window.api.sftp.disconnect(sessionId.value).catch(() => undefined)
+  if (sessionId.value) void remoteApi.value.disconnect(sessionId.value).catch(() => undefined)
 })
 
 function closeEntryMenu(): void {
@@ -423,7 +425,7 @@ function closeEntryMenu(): void {
 <template>
   <section class="sftp-pane">
     <div class="sftp-toolbar">
-      <span class="terminal-kind">SFTP</span>
+      <span class="terminal-kind">{{ protocolName }}</span>
       <button class="toolbar-button" :disabled="!sessionId" @click="chooseUploadFiles">⇧ {{ t('upload') }}</button>
       <button class="toolbar-button" :disabled="!sessionId" @click="chooseUploadFolder">▰ {{ t('uploadFolder') }}</button>
       <button class="toolbar-button" :disabled="!sessionId" @click="createDirectory">＋ {{ t('newFolder') }}</button>
@@ -503,7 +505,7 @@ function closeEntryMenu(): void {
     </div>
     <div v-if="editor" class="modal-layer" @click.self="editor = null">
       <div class="connection-dialog sftp-editor">
-        <div class="dialog-heading"><div><span class="eyebrow">SFTP</span><h2>{{ editor.entry.name }}</h2></div><button type="button" class="icon-button" :aria-label="t('cancel')" @click="editor = null">×</button></div>
+        <div class="dialog-heading"><div><span class="eyebrow">{{ protocolName }}</span><h2>{{ editor.entry.name }}</h2></div><button type="button" class="icon-button" :aria-label="t('cancel')" @click="editor = null">×</button></div>
         <div v-if="errorMessage" class="sftp-error"><span>{{ errorMessage }}</span></div>
         <textarea v-model="editor.content" :aria-label="t('onlineEditor')" spellcheck="false"></textarea>
         <div class="dialog-actions"><button type="button" class="button secondary" @click="editor = null">{{ t('cancel') }}</button><button type="button" class="button primary" :disabled="editorSaving" @click="saveRemoteFile">{{ editorSaving ? t('saving') : t('saveFile') }}</button></div>

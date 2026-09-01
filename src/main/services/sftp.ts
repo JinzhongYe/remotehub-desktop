@@ -38,8 +38,8 @@ type SshClientLike = {
 type SshClientConstructor = new () => SshClientLike
 type SftpSession = { id: string; connectionId: string; client: SshClientLike; sftp: SftpLike }
 type EventSink = (channel: 'sftp:transfer', payload: SftpTransferEvent) => void
-type FilePlan = { localPath: string; remotePath: string; relativePath: string; size: number; modifiedAt: number }
-type DirectoryPlan = { path: string; modifiedAt: number }
+export type FilePlan = { localPath: string; remotePath: string; relativePath: string; size: number; modifiedAt: number }
+export type DirectoryPlan = { path: string; modifiedAt: number }
 
 const loadNativeModule = createRequire(__filename)
 const MAX_TRANSFER_FILES = 5000
@@ -434,7 +434,7 @@ export function pipeTransfer(source: Readable, target: Writable, offset: number,
   }
 }
 
-function validateRemotePath(path: string): string {
+export function validateRemotePath(path: string): string {
   if (typeof path !== 'string' || !path || path.length > 4096 || path.includes('\0')) throw appError('SFTP_PATH_INVALID', 'Remote path is invalid')
   return normalizeRemotePath(path)
 }
@@ -444,7 +444,7 @@ function validateLocalPath(path: string): string {
   return path
 }
 
-function validateLocalDirectory(path: string): string {
+export function validateLocalDirectory(path: string): string {
   const localPath = validateLocalPath(path)
   if (!lstatSync(localPath).isDirectory()) throw appError('SFTP_LOCAL_PATH_INVALID', 'Choose a local folder')
   return localPath
@@ -459,7 +459,7 @@ function pathDepth(path: string): number {
   return path.split('/').filter(Boolean).length
 }
 
-function safeLocalFileName(name: string): string {
+export function safeLocalFileName(name: string): string {
   const windowsStem = name.split('.')[0].toUpperCase()
   const windowsReserved = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsStem)
   const invalid = !name || name === '.' || name === '..' || name.includes('/') || name.includes('\0') || (process.platform === 'win32' && (/[\\:*?"<>|]/.test(name) || /[. ]$/.test(name) || windowsReserved))
@@ -467,7 +467,7 @@ function safeLocalFileName(name: string): string {
   return name
 }
 
-function assertUniqueLocalTargets(files: FilePlan[]): void {
+export function assertUniqueLocalTargets(files: FilePlan[]): void {
   const targets = new Set<string>()
   for (const file of files) {
     const key = process.platform === 'win32' ? file.localPath.toLocaleLowerCase() : file.localPath

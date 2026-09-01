@@ -27,9 +27,9 @@ watch(() => [props.open, props.connection], () => {
   form.name = item?.name || ''
   form.type = item?.type || 'ssh'
   form.host = item?.host || ''
-  form.port = item?.port || (form.type === 'database' ? 3306 : form.type === 'serial' ? 115200 : form.type === 'shell' ? 1 : 22)
+  form.port = item?.port || (form.type === 'database' ? 3306 : form.type === 'ftp' ? 21 : form.type === 'serial' ? 115200 : form.type === 'shell' ? 1 : 22)
   form.username = item?.username || ''
-  form.authType = form.type === 'shell' || form.type === 'serial' ? undefined : form.type === 'database' ? 'password' : item?.authType || 'privateKey'
+  form.authType = form.type === 'shell' || form.type === 'serial' ? undefined : form.type === 'database' || form.type === 'ftp' ? 'password' : item?.authType || 'privateKey'
   form.databaseType = item?.databaseType || 'mysql'
   form.database = item?.database || ''
   form.databaseSslMode = item?.databaseSslMode || 'disable'
@@ -71,11 +71,18 @@ async function testConnection(): Promise<void> {
 }
 
 function changeType(): void {
+  if (props.connection && form.type !== props.connection.type) {
+    clearCredential.value = true
+  }
   if (form.type === 'database') {
-    if (form.port === 1 || form.port === 22 || form.port === 115200 || form.port > 65535) form.port = form.databaseType === 'mysql' ? 3306 : form.databaseType === 'postgres' ? 5432 : 1
+    if (form.port === 1 || form.port === 21 || form.port === 22 || form.port === 115200 || form.port > 65535) form.port = form.databaseType === 'mysql' ? 3306 : form.databaseType === 'postgres' ? 5432 : 1
     form.authType = form.databaseType === 'sqlite' ? undefined : 'password'
   }
-  if (form.type === 'ssh' && (form.port === 1 || form.port === 5432 || form.port === 115200 || form.port > 65535)) form.port = 22
+  if (form.type === 'ssh' && (form.port === 1 || form.port === 21 || form.port === 5432 || form.port === 115200 || form.port > 65535)) form.port = 22
+  if (form.type === 'ftp') {
+    if (form.port === 1 || form.port === 22 || form.port === 5432 || form.port === 115200 || form.port > 65535) form.port = 21
+    form.authType = 'password'
+  }
   if (form.type === 'serial') {
     form.port = 115200
     form.authType = undefined
@@ -83,7 +90,7 @@ function changeType(): void {
   } else if (form.type === 'shell') {
     form.port = 1
     form.authType = undefined
-  } else if (!form.authType) {
+  } else if (!form.authType && form.type !== 'ftp') {
     form.authType = 'privateKey'
   }
 }
@@ -131,7 +138,7 @@ async function chooseShellDirectory(): Promise<void> {
       </div>
       <div class="dialog-grid">
         <label class="field wide"><span>{{ t('name') }}</span><input v-model="form.name" required placeholder="dev-server / MES PG"></label>
-        <label class="field"><span>{{ t('type') }}</span><select v-model="form.type" @change="changeType"><option value="ssh">SSH Server</option><option value="database">Database</option><option value="serial">Serial / 串口</option><option value="shell">{{ shellTypeName }}</option></select></label>
+        <label class="field"><span>{{ t('type') }}</span><select v-model="form.type" @change="changeType"><option value="ssh">SSH Server</option><option value="ftp">FTP Server</option><option value="database">Database</option><option value="serial">Serial / 串口</option><option value="shell">{{ shellTypeName }}</option></select></label>
         <label v-if="form.type !== 'shell' && (form.databaseType !== 'sqlite' || form.type !== 'database')" class="field"><span>{{ form.type === 'serial' ? t('baudRate') : t('port') }}</span><input v-model.number="form.port" type="number" min="1" :max="form.type === 'serial' ? 4000000 : 65535" required></label>
         <label class="field wide"><span>{{ form.type === 'shell' ? t('workingDirectory') : form.type === 'serial' ? t('serialPath') : form.type === 'database' && form.databaseType === 'sqlite' ? t('databaseFile') : t('host') }}</span><span v-if="form.type === 'shell'" class="input-with-action"><input v-model="form.host" required placeholder="C:\Projects / /home/user/Projects"><button type="button" class="button secondary" @click="chooseShellDirectory">{{ t('chooseFolder') }}</button></span><span v-else-if="form.type === 'serial'" class="input-with-action"><input v-model="form.host" required list="serial-port-list" placeholder="COM3 / /dev/ttyUSB0"><button type="button" class="button secondary" @click="loadSerialPorts">{{ t('refresh') }}</button></span><span v-else-if="form.type === 'database' && form.databaseType === 'sqlite'" class="input-with-action"><input v-model="form.host" required placeholder="/data/app.db"><button type="button" class="button secondary" @click="chooseDatabaseFile">{{ t('chooseFile') }}</button></span><input v-else v-model="form.host" required placeholder="192.168.1.100 / db.example.com"><datalist id="serial-port-list"><option v-for="item in serialPorts" :key="item.path" :value="item.path">{{ item.manufacturer }}</option></datalist><small v-if="form.type === 'serial' && serialPortsError" class="field-error">{{ serialPortsError }}</small></label>
         <template v-if="form.type !== 'serial' && form.type !== 'shell'">

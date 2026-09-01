@@ -48,8 +48,7 @@ function connectionFor(connectionId?: string): Connection | null {
 
 function openConnection(connection: Connection): void {
   connections.select(connection.id)
-  connections.markRecent(connection.id)
-  workspace.openConnection(connection.id, connection.name, connection.type === 'database' ? 'sql' : 'terminal')
+  workspace.openConnection(connection.id, connection.name, connection.type === 'database' ? 'sql' : connection.type === 'ftp' ? 'sftp' : 'terminal')
 }
 
 function openActiveAgain(): void {
@@ -171,7 +170,7 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
             </SplitPane>
             <TerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'shell'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" local />
             <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />
-            <SftpPane v-else-if="tab.type === 'sftp' && connectionFor(tab.connectionId)?.type === 'ssh'" :connection-id="tab.connectionId" />
+            <SftpPane v-else-if="tab.type === 'sftp' && (connectionFor(tab.connectionId)?.type === 'ssh' || connectionFor(tab.connectionId)?.type === 'ftp')" :connection-id="tab.connectionId" :protocol="connectionFor(tab.connectionId)?.type === 'ftp' ? 'ftp' : 'sftp'" />
             <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" />
             <div v-else class="workspace-placeholder">
               <div class="connection-overview">

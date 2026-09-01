@@ -56,7 +56,7 @@ export class StorageService {
       CREATE TABLE IF NOT EXISTS connections (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial', 'shell')),
+        type TEXT NOT NULL CHECK(type IN ('ssh', 'ftp', 'database', 'serial', 'shell')),
         host TEXT NOT NULL,
         port INTEGER NOT NULL,
         username TEXT,
@@ -290,7 +290,7 @@ function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'c
   const host = String(input.host || '').trim()
   if (!name || !host) throw appError('INVALID_CONNECTION', '连接名称和主机/串口地址不能为空')
   const port = Number(input.port)
-  if (!['ssh', 'database', 'serial', 'shell'].includes(input.type)) throw appError('INVALID_CONNECTION_TYPE', 'Connection type is invalid')
+  if (!['ssh', 'ftp', 'database', 'serial', 'shell'].includes(input.type)) throw appError('INVALID_CONNECTION_TYPE', 'Connection type is invalid')
   const maximumPort = input.type === 'serial' ? 4_000_000 : 65535
   if (input.type !== 'shell' && (!Number.isInteger(port) || port < 1 || port > maximumPort)) throw appError('INVALID_PORT', input.type === 'serial' ? '波特率必须是1到4000000之间的整数' : '端口必须是1到65535之间的整数')
   if (input.type === 'shell' && (!isAbsolute(host) || host.length > 4096)) throw appError('SHELL_DIRECTORY_INVALID', 'Shell working directory is invalid')
@@ -344,7 +344,7 @@ function ensureColumn(db: Database.Database, table: string, column: string, defi
 
 function migrateConnectionTypes(db: Database.Database): void {
   const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'connections'").get() as { sql?: string } | undefined
-  if (table?.sql?.includes("'shell'")) return
+  if (table?.sql?.includes("'ftp'")) return
   db.pragma('foreign_keys = OFF')
   try {
     db.exec(`
@@ -352,7 +352,7 @@ function migrateConnectionTypes(db: Database.Database): void {
       CREATE TABLE connections_next (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK(type IN ('ssh', 'database', 'serial', 'shell')),
+        type TEXT NOT NULL CHECK(type IN ('ssh', 'ftp', 'database', 'serial', 'shell')),
         host TEXT NOT NULL,
         port INTEGER NOT NULL,
         username TEXT,

@@ -6,7 +6,6 @@ import ConnectionIcon from './ConnectionIcon.vue'
 
 const props = defineProps<{
   connections: Connection[]
-  recentConnections: Connection[]
   groups: Group[]
   selectedId: string | null
   search: string
@@ -88,7 +87,6 @@ function run(action: 'select' | 'sftp' | 'edit' | 'test' | 'duplicate' | 'remove
       <kbd>⌘/Ctrl K</kbd>
     </label>
     <div class="tree-caption"><span>{{ t('myServers') }}</span><span><button class="text-button" @click="emit('createGroup')">{{ t('newGroup') }}</button><button class="text-button" @click="emit('create')">{{ t('add') }}</button></span></div>
-    <div v-if="recentConnections.length" class="recent-connections"><span>{{ t('recent') }}</span><button v-for="connection in recentConnections" :key="connection.id" :title="t('doubleClick')" @dblclick="emit('select', connection.id)">{{ connection.name }}</button></div>
     <div v-if="!connections.length && !groups.length" class="empty-explorer">
       <div class="empty-mark">＋</div>
       <p>{{ t('emptyConnections') }}</p>

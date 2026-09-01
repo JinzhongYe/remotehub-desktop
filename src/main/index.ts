@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { registerAppIpc } from './ipc/app.ipc'
 import { registerConnectionIpc } from './ipc/connection.ipc'
 import { registerSshIpc } from './ipc/ssh.ipc'
-import { registerSftpIpc } from './ipc/sftp.ipc'
+import { registerFtpIpc, registerSftpIpc } from './ipc/sftp.ipc'
 import { registerSerialIpc } from './ipc/serial.ipc'
 import { registerDatabaseIpc } from './ipc/database.ipc'
 import { registerLocalShellIpc } from './ipc/local-shell.ipc'
@@ -12,6 +12,7 @@ import { StorageService } from './services/storage'
 import { CredentialService } from './services/credentials'
 import { SshService } from './services/ssh'
 import { SftpService } from './services/sftp'
+import { FtpService } from './services/ftp'
 import { SerialService } from './services/serial'
 import { DatabaseService } from './services/database'
 import { LocalShellService } from './services/local-shell'
@@ -28,6 +29,7 @@ let mainWindow: BrowserWindow | null = null
 let storage: StorageService | null = null
 let ssh: SshService | null = null
 let sftp: SftpService | null = null
+let ftp: FtpService | null = null
 let serial: SerialService | null = null
 let database: DatabaseService | null = null
 let localShell: LocalShellService | null = null
@@ -77,6 +79,7 @@ app.whenReady().then(async () => {
   const credentials = new CredentialService()
   ssh = new SshService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   sftp = new SftpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
+  ftp = new FtpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   serial = new SerialService(storage, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   database = new DatabaseService(storage, credentials)
   localShell = new LocalShellService(storage, (channel, payload) => mainWindow?.webContents.send(channel, payload))
@@ -84,6 +87,7 @@ app.whenReady().then(async () => {
   registerConnectionIpc(storage, credentials, (path, baudRate) => serial!.test(path, baudRate), (connection, credential) => database!.test(connection, credential))
   registerSshIpc(storage, ssh)
   registerSftpIpc(storage, sftp)
+  registerFtpIpc(storage, ftp)
   registerSerialIpc(storage, serial)
   registerDatabaseIpc(storage, database)
   registerLocalShellIpc(storage, localShell)
@@ -105,6 +109,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   ssh?.dispose()
   sftp?.dispose()
+  ftp?.dispose()
   serial?.dispose()
   database?.dispose()
   localShell?.dispose()
