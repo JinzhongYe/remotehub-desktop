@@ -5,3 +5,4 @@ release/
 electron-cache/
 npm-cache/
 *.log
+.agents

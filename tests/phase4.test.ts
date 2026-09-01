@@ -7,6 +7,7 @@ import { localShellCommand, localShellName } from '../src/shared/local-shell'
 import { parseServerStatus } from '../src/shared/ssh'
 import { parseCodexStatus } from '../src/shared/codex'
 import { useWorkspaceStore } from '../src/renderer/stores/workspace'
+import { fileVisual, fileVisualIcon } from '../src/renderer/file-icon'
 
 describe('Phase 4 SFTP, serial, and private key files', () => {
   it('normalizes remote paths without escaping the remote root', () => {
@@ -21,6 +22,46 @@ describe('Phase 4 SFTP, serial, and private key files', () => {
     expect(fileIcon('file', 'photo.png')).toBe('🖼️')
     expect(fileIcon('file', 'data.xlsx')).toBe('📊')
     expect(fileIcon('file', 'README')).toBe('📄')
+  })
+
+  it('maps common SFTP file types to distinct vector icons', () => {
+    expect([
+      fileVisualIcon('directory', 'src'), fileVisualIcon('link', 'current'), fileVisualIcon('file', 'app.ts'),
+      fileVisualIcon('file', '.env'), fileVisualIcon('file', 'README.md'), fileVisualIcon('file', 'manual.pdf'),
+      fileVisualIcon('file', 'data.xlsx'), fileVisualIcon('file', 'slides.ppt'), fileVisualIcon('file', 'photo.heic'),
+      fileVisualIcon('file', 'song.flac'), fileVisualIcon('file', 'movie.mkv'), fileVisualIcon('file', 'backup.tar.gz'),
+      fileVisualIcon('file', 'cache.sqlite'), fileVisualIcon('file', 'id_ed25519'), fileVisualIcon('file', 'ui.woff2'),
+      fileVisualIcon('file', 'setup.exe'), fileVisualIcon('file', 'unknown')
+    ]).toEqual(['folder', 'link', 'code', 'config', 'code', 'pdf', 'table', 'presentation', 'image', 'audio', 'video', 'archive', 'database', 'key', 'font', 'executable', 'file'])
+  })
+
+  it('uses recognizable language badges for modern source files', () => {
+    expect([
+      fileVisual('file', 'index.php'), fileVisual('file', 'main.ts'), fileVisual('file', 'App.vue'),
+      fileVisual('file', 'server.py'), fileVisual('file', 'index.html'), fileVisual('file', 'styles.css'),
+      fileVisual('file', 'package.json'), fileVisual('file', 'compose.yaml'), fileVisual('file', 'Dockerfile')
+    ].map(({ badge, tone }) => [badge, tone])).toEqual([
+      ['php', 'language-php'], ['TS', 'language-typescript'], ['V', 'language-vue'],
+      ['PY', 'language-python'], ['5', 'language-html'], ['3', 'language-css'],
+      ['{}', 'language-json'], ['YML', 'language-yaml'], ['DK', 'language-docker']
+    ])
+  })
+
+  it('covers office, design, and unknown extensions without a generic fallback', () => {
+    expect([
+      fileVisual('file', 'report.docx'), fileVisual('file', 'budget.xlsx'), fileVisual('file', 'pitch.pptx'),
+      fileVisual('file', 'mockup.psd'), fileVisual('file', 'model.blend'), fileVisual('file', 'novel.epub'),
+      fileVisual('file', 'firmware.uf2'), fileVisual('file', 'archive.unknownformat'), fileVisual('file', 'README')
+    ]).toEqual([
+      { icon: 'fileText', badge: 'W', tone: 'language-word' },
+      { icon: 'table', badge: 'X', tone: 'language-excel' },
+      { icon: 'presentation', badge: 'P', tone: 'language-powerpoint' },
+      { icon: 'image', badge: 'Ps', tone: 'language-photoshop' },
+      { icon: 'cube', tone: 'cube' }, { icon: 'book', tone: 'book' },
+      { icon: 'file', badge: 'UF2', tone: 'language-extension' },
+      { icon: 'file', badge: 'UNKN', tone: 'language-extension' },
+      { icon: 'fileText', tone: 'fileText' }
+    ])
   })
 
   it('selects SFTP entries with Ctrl and Shift', () => {
