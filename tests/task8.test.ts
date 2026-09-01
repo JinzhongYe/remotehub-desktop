@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { once, Readable, Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createConnectionExport, parseConnectionExport } from '../src/shared/connection'
-import { buildUploadPlan, pipeTransfer } from '../src/main/services/sftp'
+import { buildUploadPlan, pipeTransfer, SftpService } from '../src/main/services/sftp'
 import type { Connection } from '../src/shared/types'
 
 const temporaryPaths: string[] = []
@@ -47,5 +47,24 @@ describe('connection JSON and SFTP upload metadata', () => {
     target.destroy()
     await closed
     expect(done).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the remote modification time after downloading a file', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'remotehub-download-'))
+    temporaryPaths.push(root)
+    const localPath = join(root, 'note.txt')
+    const modifiedAt = Math.floor(new Date('2024-01-02T03:04:05Z').getTime() / 1000)
+    const done = vi.fn()
+    const service = new SftpService(null as never, null as never, () => undefined)
+
+    service['startDownload'](
+      { createReadStream: () => Readable.from('hello') } as never,
+      { localPath, remotePath: '/note.txt', relativePath: 'note.txt', size: 5, modifiedAt },
+      0,
+      { progress: () => undefined, done }
+    )
+
+    await vi.waitFor(() => expect(done).toHaveBeenCalledWith())
+    expect(Math.floor(statSync(localPath).mtimeMs / 1000)).toBe(modifiedAt)
   })
 })

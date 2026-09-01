@@ -51,12 +51,14 @@ const serverVersion = ref('')
 const sqlLastSql = ref('')
 const tableLastSql = ref<Record<string, string>>({})
 const cellContextMenu = ref<{ x: number; y: number; row: DatabaseCell[]; rowIndex: number; columnIndex: number; value: DatabaseCell } | null>(null)
+const tabContextMenu = ref<{ x: number; y: number; kind: 'table' | 'structure'; table: DatabaseTable } | null>(null)
 const selectedCell = ref<{ row: DatabaseCell[]; rowNumber: number; columnIndex: number; columnName: string; columnType: string; value: DatabaseCell } | null>(null)
 const structureSection = ref<'fields' | 'indexes' | 'foreignKeys' | 'checks' | 'triggers' | 'advanced'>('fields')
 const selectedStructureColumnName = ref('')
 const csvInput = ref<HTMLInputElement | null>(null)
 const workspaceHost = ref<HTMLElement | null>(null)
 const schemaWidth = ref(235)
+const schemaCollapsed = ref(false)
 const resizingSchema = ref(false)
 let editor: EditorView | undefined
 const editorTheme = new Compartment()
@@ -294,6 +296,32 @@ function closeStructure(table: DatabaseTable): void {
       workspaceMode.value = 'home'
     }
   }
+}
+
+function showTabContextMenu(event: MouseEvent, kind: 'table' | 'structure', table: DatabaseTable): void {
+  event.preventDefault()
+  event.stopPropagation()
+  cellContextMenu.value = null
+  tabContextMenu.value = {
+    x: Math.max(4, Math.min(event.clientX, window.innerWidth - 154)),
+    y: Math.max(4, Math.min(event.clientY, window.innerHeight - 76)),
+    kind,
+    table
+  }
+}
+
+function closeTabFromMenu(): void {
+  const target = tabContextMenu.value
+  tabContextMenu.value = null
+  if (!target) return
+  if (target.kind === 'table') closeTable(target.table)
+  else closeStructure(target.table)
+}
+
+function closeAllDatabaseTabs(): void {
+  tabContextMenu.value = null
+  for (const table of [...openedTables.value]) closeTable(table)
+  for (const table of [...openedStructures.value]) closeStructure(table)
 }
 
 function openTableSql(): void {
@@ -572,6 +600,7 @@ function resizeSchemaWithKeyboard(event: KeyboardEvent): void {
 function showCellContextMenu(event: MouseEvent, row: DatabaseCell[], rowIndex: number, columnIndex: number, value: DatabaseCell): void {
   event.preventDefault()
   event.stopPropagation()
+  tabContextMenu.value = null
   cellContextMenu.value = {
     x: Math.max(4, Math.min(event.clientX, window.innerWidth - 154)),
     y: Math.max(4, Math.min(event.clientY, window.innerHeight - 48)),
@@ -605,8 +634,9 @@ function closeCellDetail(): void {
   selectedCell.value = null
 }
 
-function closeCellContextMenu(): void {
+function closeContextMenus(): void {
   cellContextMenu.value = null
+  tabContextMenu.value = null
 }
 
 function showError(error: unknown): void {
@@ -625,7 +655,7 @@ async function exportResult(): Promise<void> {
 }
 
 onMounted(async () => {
-  document.addEventListener('pointerdown', closeCellContextMenu)
+  document.addEventListener('pointerdown', closeContextMenus)
   await nextTick()
   if (editorHost.value) editor = new EditorView({
     parent: editorHost.value,
@@ -639,7 +669,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disposed = true
-  document.removeEventListener('pointerdown', closeCellContextMenu)
+  document.removeEventListener('pointerdown', closeContextMenus)
   themeObserver?.disconnect()
   editor?.destroy()
   if (sessionId.value) void window.api.database.disconnect(sessionId.value).catch(() => undefined)
@@ -662,8 +692,8 @@ onBeforeUnmount(() => {
     </header>
     <div v-if="errorMessage" class="database-error"><span>{{ errorMessage }}</span><button class="icon-button" @click="errorMessage = ''">×</button></div>
     <div ref="workspaceHost" class="database-workspace" :class="{ resizing: resizingSchema }">
-      <aside class="schema-explorer" :style="{ width: `${schemaWidth}px`, flexBasis: `${schemaWidth}px` }">
-        <div class="schema-heading"><span>{{ t('schemaExplorer') }}</span><small>{{ tables.length }}</small></div>
+      <aside class="schema-explorer" :class="{ collapsed: schemaCollapsed }" :style="{ width: `${schemaCollapsed ? 34 : schemaWidth}px`, flexBasis: `${schemaCollapsed ? 34 : schemaWidth}px` }">
+        <div class="schema-heading"><span>{{ t('schemaExplorer') }}</span><small>{{ tables.length }}</small><button :title="t(schemaCollapsed ? 'expandSchema' : 'collapseSchema')" :aria-label="t(schemaCollapsed ? 'expandSchema' : 'collapseSchema')" @click="schemaCollapsed = !schemaCollapsed">{{ schemaCollapsed ? '›' : '‹' }}</button></div>
         <label class="schema-search"><span>⌕</span><input v-model="schemaFilter" :placeholder="t('searchObjects')"></label>
         <template v-if="isPostgres">
           <div v-if="!visibleDatabases.length && connecting" class="schema-empty">{{ t('loading') }}</div>
@@ -700,13 +730,13 @@ onBeforeUnmount(() => {
           </template>
         </template>
       </aside>
-      <div class="schema-resizer" role="separator" tabindex="0" aria-orientation="vertical" :aria-valuemin="180" :aria-valuemax="520" :aria-valuenow="Math.round(schemaWidth)" @pointerdown.prevent="startSchemaResize" @pointermove="resizeSchema" @pointerup="stopSchemaResize" @pointercancel="stopSchemaResize" @keydown="resizeSchemaWithKeyboard"></div>
+      <div v-if="!schemaCollapsed" class="schema-resizer" role="separator" tabindex="0" aria-orientation="vertical" :aria-valuemin="180" :aria-valuemax="520" :aria-valuenow="Math.round(schemaWidth)" @pointerdown.prevent="startSchemaResize" @pointermove="resizeSchema" @pointerup="stopSchemaResize" @pointercancel="stopSchemaResize" @keydown="resizeSchemaWithKeyboard"></div>
       <main class="sql-workspace">
         <nav class="database-tabs">
           <button :class="{ active: workspaceMode === 'home' }" @click="workspaceMode = 'home'">▦ {{ t('tableList') }}</button>
           <button :class="{ active: workspaceMode === 'sql' }" @click="openSqlEditor">⌁ {{ t('sqlEditor') }}</button>
-          <div v-for="table in openedTables" :key="`data:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'table' && activeTableName === tableKey(table) }"><button @click="activateTable(table)">▦ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeTable(table)">×</button></div>
-          <div v-for="table in openedStructures" :key="`structure:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'structure' && activeTableName === tableKey(table) }"><button @click="activateStructure(table)">▤ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeStructure(table)">×</button></div>
+          <div v-for="table in openedTables" :key="`data:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'table' && activeTableName === tableKey(table) }" @contextmenu="showTabContextMenu($event, 'table', table)"><button @click="activateTable(table)">▦ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeTable(table)">×</button></div>
+          <div v-for="table in openedStructures" :key="`structure:${tableKey(table)}`" class="database-table-tab" :class="{ active: workspaceMode === 'structure' && activeTableName === tableKey(table) }" @contextmenu="showTabContextMenu($event, 'structure', table)"><button @click="activateStructure(table)">▤ {{ isPostgres ? `${table.database}.${table.name}` : table.name }}</button><button class="database-tab-close" :aria-label="t('closeTab')" @click="closeStructure(table)">×</button></div>
         </nav>
         <section v-if="workspaceMode === 'home'" class="database-home">
           <div class="database-home-toolbar">
@@ -793,6 +823,10 @@ onBeforeUnmount(() => {
     <input ref="csvInput" class="visually-hidden" type="file" accept=".csv,text/csv" @change="importCsv">
     <div v-if="cellContextMenu" class="database-cell-context-menu" role="menu" :style="{ left: `${cellContextMenu.x}px`, top: `${cellContextMenu.y}px` }" @pointerdown.stop>
       <button role="menuitem" @click="showFullCellData">{{ t('showFullData') }}</button>
+    </div>
+    <div v-if="tabContextMenu" class="database-cell-context-menu" role="menu" :style="{ left: `${tabContextMenu.x}px`, top: `${tabContextMenu.y}px` }" @pointerdown.stop>
+      <button role="menuitem" @click="closeTabFromMenu">{{ t('closeCurrentPage') }}</button>
+      <button role="menuitem" @click="closeAllDatabaseTabs">{{ t('closeAllPages') }}</button>
     </div>
   </section>
 </template>

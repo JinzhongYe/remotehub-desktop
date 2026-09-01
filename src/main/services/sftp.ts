@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, statSync, utimes } from 'node:fs'
 import { isUtf8 } from 'node:buffer'
 import { basename, isAbsolute, join, posix } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
@@ -337,7 +337,10 @@ export class SftpService {
   }
 
   private startDownload(sftp: SftpLike, file: FilePlan, offset: number, hooks: TransferHooks): TransferControl {
-    return pipeTransfer(sftp.createReadStream(file.remotePath, { start: offset }), createWriteStream(file.localPath, { flags: offset > 0 ? 'r+' : 'w', start: offset }), offset, hooks)
+    return pipeTransfer(sftp.createReadStream(file.remotePath, { start: offset }), createWriteStream(file.localPath, { flags: offset > 0 ? 'r+' : 'w', start: offset }), offset, {
+      ...hooks,
+      done: (error) => error ? hooks.done(error) : utimes(file.localPath, file.modifiedAt, file.modifiedAt, (timeError) => timeError ? hooks.done(timeError) : hooks.done())
+    })
   }
 
   private call(sessionId: string, method: 'mkdir' | 'unlink' | 'rmdir', path: string): Promise<void> {

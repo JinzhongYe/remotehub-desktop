@@ -2,7 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 import { isPrivateKeyText, privateKeyFileName } from '../src/shared/private-key'
 import { isValidBaudRate } from '../src/shared/serial'
-import { fileIcon, joinRemotePath, normalizeRemotePath, parentRemotePath } from '../src/shared/sftp'
+import { fileIcon, joinRemotePath, normalizeRemotePath, parentRemotePath, selectSftpPaths } from '../src/shared/sftp'
 import { localShellCommand, localShellName } from '../src/shared/local-shell'
 import { parseServerStatus } from '../src/shared/ssh'
 import { parseCodexStatus } from '../src/shared/codex'
@@ -21,6 +21,13 @@ describe('Phase 4 SFTP, serial, and private key files', () => {
     expect(fileIcon('file', 'photo.png')).toBe('🖼️')
     expect(fileIcon('file', 'data.xlsx')).toBe('📊')
     expect(fileIcon('file', 'README')).toBe('📄')
+  })
+
+  it('selects SFTP entries with Ctrl and Shift', () => {
+    const paths = ['/a', '/b', '/c', '/d']
+    expect(selectSftpPaths(paths, ['/a'], '/c', '/a', true, false)).toEqual(['/a', '/b', '/c'])
+    expect(selectSftpPaths(paths, ['/a'], '/c', '/a', false, true)).toEqual(['/a', '/c'])
+    expect(selectSftpPaths(paths, ['/a', '/d'], '/c', '/a', true, true)).toEqual(['/a', '/d', '/b', '/c'])
   })
 
   it('recognizes OpenSSH, PEM, PKCS8, and PuTTY key files', () => {

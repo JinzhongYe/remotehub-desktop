@@ -52,7 +52,7 @@
   --terminal-row: rgba(23, 105, 170, .045);
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; font-weight: 1000; }
 html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 body { background: var(--bg); font-size: 14px; }
 .visually-hidden { display: none; }
@@ -354,6 +354,7 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .sftp-table th:nth-child(4) { width: 22%; }
 .sftp-table td { overflow: hidden; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .sftp-table tbody tr:hover { background: var(--hover); }
+.sftp-table tbody tr.selected { background: rgba(128,183,255,.11); }
 .sftp-table .parent-entry { cursor: pointer; }
 .sftp-table .parent-entry .file-name { font-weight: 700; }
 .file-icon { display: inline-block; width: 22px; font-family: "Segoe UI Emoji", sans-serif; font-size: 16px; line-height: 1; }
@@ -401,12 +402,18 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .database-error span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .database-workspace { display: flex; min-height: 0; flex: 1; }
 .schema-explorer { width: 235px; flex: 0 0 235px; overflow: auto; background: var(--panel); }
+.schema-explorer.collapsed { overflow: hidden; }
+.schema-explorer.collapsed > :not(.schema-heading), .schema-explorer.collapsed .schema-heading > span, .schema-explorer.collapsed .schema-heading > small { display: none; }
 .schema-resizer { position: relative; z-index: 3; width: 5px; flex: 0 0 5px; cursor: col-resize; background: var(--line); outline: 0; touch-action: none; }
 .schema-resizer::after { position: absolute; inset: 0 -2px; content: ''; }
 .schema-resizer:hover, .schema-resizer:focus, .database-workspace.resizing .schema-resizer { background: var(--blue); }
 .database-workspace.resizing { cursor: col-resize; user-select: none; }
 .schema-heading { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; min-height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--muted); background: var(--surface-raised); font-size: 9px; font-weight: 650; text-transform: uppercase; letter-spacing: .6px; }
 .schema-heading small { margin-left: auto; color: var(--subtle); }
+.schema-heading > button { width: 24px; height: 24px; margin-left: 6px; padding: 0; border: 0; border-radius: 3px; color: var(--muted); background: transparent; }
+.schema-heading > button:hover { color: var(--text); background: var(--hover); }
+.schema-explorer.collapsed .schema-heading { justify-content: center; padding: 0; }
+.schema-explorer.collapsed .schema-heading > button { margin: 0; }
 .schema-search, .row-filter { display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--subtle); background: var(--input); }
 .schema-search { position: sticky; z-index: 2; top: 34px; margin: 7px; padding: 5px 7px; }
 .schema-search input, .row-filter input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; }
@@ -555,6 +562,7 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .sftp-table td, .transfer-header, .transfer-copy strong, .database-toolbar strong, .database-toolbar select, .schema-table > button, .sql-section-toolbar, .result-toolbar { font-size: 12px; }
 .database-server, .database-error, .schema-heading, .sql-section-toolbar small, .result-toolbar small, .result-pager, .result-pager button, .result-grid th, .result-grid td, .result-empty, .mutation-result { font-size: 11px; }
 .sql-editor-host .cm-editor { font-size: 13px; }
+.database-tabs > button, .database-table-tab, .result-grid th, .result-grid td { font-size: 13px; }
 @media (max-width: 900px) { .explorer { width: 220px; flex-basis: 220px; } .brand { width: 190px; } .module-placeholders { grid-template-columns: 1fr; } }
 
 :root[data-theme='light'] .top-toolbar,

@@ -52,6 +52,7 @@ async function createWindow(): Promise<void> {
     }
   })
 
+  mainWindow.webContents.setZoomFactor(1.2)
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('app:fullscreen-changed', true))
   mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('app:fullscreen-changed', false))

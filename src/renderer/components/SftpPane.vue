@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SftpEntry, SftpQueueResult, SftpTransferItem, SftpTransferStatus } from '../../shared/sftp'
-import { fileIcon, joinRemotePath, parentRemotePath, transferProgress } from '../../shared/sftp'
+import { fileIcon, joinRemotePath, parentRemotePath, selectSftpPaths, transferProgress } from '../../shared/sftp'
 import { t } from '../i18n'
 import SplitPane from './SplitPane.vue'
 
@@ -25,6 +25,8 @@ const localPath = ref('')
 const localPathInput = ref('')
 const localParentPath = ref('')
 const localEntries = ref<LocalEntry[]>([])
+const selectedLocalPaths = ref<string[]>([])
+const selectedRemotePaths = ref<string[]>([])
 const localLoading = ref(true)
 const localError = ref('')
 const entryMenu = ref<{ side: 'local' | 'remote'; entry: LocalEntry | SftpEntry; x: number; y: number } | null>(null)
@@ -35,6 +37,8 @@ const editorSaving = ref(false)
 let removeTransferListener: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
+let localSelectionAnchor = ''
+let remoteSelectionAnchor = ''
 
 const activeTransfers = computed(() => transfers.value.filter((item) => item.status === 'running' || item.status === 'queued' || item.status === 'paused'))
 const finishedTransfers = computed(() => transfers.value.filter((item) => item.status === 'completed' || item.status === 'error' || item.status === 'cancelled'))
@@ -57,6 +61,31 @@ function upsertTransfer(item: SftpTransferItem): void {
   transfers.value.sort((a, b) => a.createdAt - b.createdAt)
 }
 
+function retainSelection(selected: string[], items: { path: string }[]): string[] {
+  const paths = new Set(items.map((item) => item.path))
+  return selected.filter((path) => paths.has(path))
+}
+
+function selectEntry(event: MouseEvent, side: 'local' | 'remote', entry: LocalEntry | SftpEntry): void {
+  const paths = (side === 'local' ? localEntries.value : entries.value).map((item) => item.path)
+  const selected = side === 'local' ? selectedLocalPaths : selectedRemotePaths
+  const anchor = side === 'local' ? localSelectionAnchor : remoteSelectionAnchor
+  selected.value = selectSftpPaths(paths, selected.value, entry.path, anchor, event.shiftKey, event.ctrlKey || event.metaKey)
+  if (!event.shiftKey) {
+    if (side === 'local') localSelectionAnchor = entry.path
+    else remoteSelectionAnchor = entry.path
+  }
+}
+
+function selectedEntries(side: 'local' | 'remote'): (LocalEntry | SftpEntry)[] {
+  const selected = side === 'local' ? selectedLocalPaths.value : selectedRemotePaths.value
+  return (side === 'local' ? localEntries.value : entries.value).filter((entry) => selected.includes(entry.path))
+}
+
+function isSelected(side: 'local' | 'remote', path: string): boolean {
+  return (side === 'local' ? selectedLocalPaths.value : selectedRemotePaths.value).includes(path)
+}
+
 async function connect(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
@@ -64,6 +93,8 @@ async function connect(): Promise<void> {
   if (sessionId.value) await window.api.sftp.disconnect(sessionId.value).catch(() => undefined)
   sessionId.value = ''
   transfers.value = []
+  selectedRemotePaths.value = []
+  remoteSelectionAnchor = ''
   try {
     const result = await window.api.sftp.connect(props.connectionId)
     if (result.trustRequired) {
@@ -102,6 +133,8 @@ async function refresh(nextPath = path.value): Promise<void> {
   errorMessage.value = ''
   try {
     entries.value = await window.api.sftp.list(sessionId.value, nextPath)
+    selectedRemotePaths.value = retainSelection(selectedRemotePaths.value, entries.value)
+    if (!selectedRemotePaths.value.includes(remoteSelectionAnchor)) remoteSelectionAnchor = ''
     path.value = nextPath
     pathInput.value = nextPath
   } catch (error) {
@@ -125,6 +158,8 @@ async function refreshLocal(nextPath?: string): Promise<void> {
     localPathInput.value = result.path
     localParentPath.value = result.parentPath
     localEntries.value = result.entries
+    selectedLocalPaths.value = retainSelection(selectedLocalPaths.value, result.entries)
+    if (!selectedLocalPaths.value.includes(localSelectionAnchor)) localSelectionAnchor = ''
   } catch (error) {
     localError.value = error instanceof Error ? error.message : t('operationFailed')
   } finally {
@@ -142,6 +177,15 @@ async function chooseLocalDirectory(): Promise<void> {
 }
 
 function showEntryMenu(event: MouseEvent, side: 'local' | 'remote', entry: LocalEntry | SftpEntry): void {
+  if (!isSelected(side, entry.path)) {
+    if (side === 'local') {
+      selectedLocalPaths.value = [entry.path]
+      localSelectionAnchor = entry.path
+    } else {
+      selectedRemotePaths.value = [entry.path]
+      remoteSelectionAnchor = entry.path
+    }
+  }
   entryMenu.value = { side, entry, x: Math.max(4, Math.min(event.clientX, window.innerWidth - 150)), y: Math.max(4, Math.min(event.clientY, window.innerHeight - 128)) }
 }
 
@@ -149,11 +193,12 @@ function runEntryAction(action: 'upload' | 'download' | 'open' | 'rename' | 'rem
   const menu = entryMenu.value
   entryMenu.value = null
   if (!menu) return
-  if (menu.side === 'local') void queueUploads([menu.entry.path])
-  else if (action === 'download') void download(menu.entry as SftpEntry)
-  else if (action === 'open') void openRemoteFile(menu.entry as SftpEntry)
-  else if (action === 'rename') void renameEntry(menu.entry as SftpEntry)
-  else if (action === 'remove') void removeEntry(menu.entry as SftpEntry)
+  const selected = selectedEntries(menu.side)
+  if (menu.side === 'local') void queueUploads(selected.map((entry) => entry.path))
+  else if (action === 'download') void download(selected as SftpEntry[])
+  else if (action === 'open' && selected.length === 1) void openRemoteFile(selected[0] as SftpEntry)
+  else if (action === 'rename' && selected.length === 1) void renameEntry(selected[0] as SftpEntry)
+  else if (action === 'remove') void removeEntries(selected as SftpEntry[])
 }
 
 function setPosition(position: SftpPosition, event: MouseEvent): void {
@@ -207,11 +252,16 @@ async function saveRemoteFile(): Promise<void> {
 }
 
 async function removeEntry(entry: SftpEntry): Promise<void> {
-  if (!sessionId.value || !window.confirm(t('deleteRemoteConfirm', { name: entry.name }))) return
+  await removeEntries([entry])
+}
+
+async function removeEntries(items: SftpEntry[]): Promise<void> {
+  if (!sessionId.value || !items.length) return
+  const names = items.slice(0, 3).map((entry) => entry.name).join(', ') + (items.length > 3 ? ` (+${items.length - 3})` : '')
+  if (!window.confirm(t('deleteRemoteConfirm', { name: names }))) return
   try {
-    await window.api.sftp.remove(sessionId.value, entry.path, entry.type)
-    await refresh()
-  } catch (error) { showError(error) }
+    await Promise.all(items.map((entry) => window.api.sftp.remove(sessionId.value, entry.path, entry.type)))
+  } catch (error) { showError(error) } finally { await refresh() }
 }
 
 async function chooseUploadFiles(): Promise<void> {
@@ -238,41 +288,55 @@ async function queueUploads(paths: string[]): Promise<void> {
 }
 
 function startEntryDrag(event: DragEvent, side: 'local' | 'remote', entry: LocalEntry | SftpEntry): void {
-  event.dataTransfer?.setData('application/x-remotehub-sftp-entry', JSON.stringify({ side, path: entry.path }))
+  const selected = side === 'local' ? selectedLocalPaths : selectedRemotePaths
+  if (!selected.value.includes(entry.path)) {
+    selected.value = [entry.path]
+    if (side === 'local') localSelectionAnchor = entry.path
+    else remoteSelectionAnchor = entry.path
+  }
+  event.dataTransfer?.setData('application/x-remotehub-sftp-entry', JSON.stringify({ side, paths: selectedEntries(side).map((item) => item.path) }))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
 }
 
-function draggedEntry(event: DragEvent): { side: 'local' | 'remote'; path: string } | null {
+function draggedEntries(event: DragEvent): { side: 'local' | 'remote'; paths: string[] } | null {
   try {
-    const value = JSON.parse(event.dataTransfer?.getData('application/x-remotehub-sftp-entry') || '') as { side?: string; path?: string }
-    return (value.side === 'local' || value.side === 'remote') && typeof value.path === 'string' ? value as { side: 'local' | 'remote'; path: string } : null
+    const value = JSON.parse(event.dataTransfer?.getData('application/x-remotehub-sftp-entry') || '') as { side?: string; paths?: unknown }
+    return (value.side === 'local' || value.side === 'remote') && Array.isArray(value.paths) && value.paths.length > 0 && value.paths.every((path) => typeof path === 'string')
+      ? value as { side: 'local' | 'remote'; paths: string[] }
+      : null
   } catch { return null }
 }
 
 function dropOnRemote(event: DragEvent): void {
   event.preventDefault()
-  const internal = draggedEntry(event)
-  if (internal?.side === 'local') return void queueUploads([internal.path])
+  const internal = draggedEntries(event)
+  if (internal?.side === 'local') return void queueUploads(internal.paths)
   const paths = [...(event.dataTransfer?.files || [])].map((file) => window.api.files.getPath(file)).filter(Boolean)
   if (paths.length) void queueUploads(paths)
 }
 
 function dropOnLocal(event: DragEvent): void {
   event.preventDefault()
-  const internal = draggedEntry(event)
-  const entry = internal?.side === 'remote' ? entries.value.find((item) => item.path === internal.path) : undefined
-  if (entry) void download(entry)
+  const internal = draggedEntries(event)
+  const selected = new Set(internal?.side === 'remote' ? internal.paths : [])
+  const items = entries.value.filter((entry) => selected.has(entry.path))
+  if (items.length) void download(items)
 }
 
-async function download(entry: SftpEntry): Promise<void> {
+async function download(input: SftpEntry | SftpEntry[]): Promise<void> {
   if (!sessionId.value) return
   const localDirectory = localPath.value || await window.api.app.chooseDownloadDirectory()
   if (!localDirectory) return
+  const items = Array.isArray(input) ? input : [input]
   try {
-    let result: SftpQueueResult = await window.api.sftp.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, false)
-    if (result.conflicts.length) {
-      if (!confirmOverwrite(result)) return
-      result = await window.api.sftp.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, true)
+    const pending: { entry: SftpEntry; result: SftpQueueResult }[] = []
+    for (const entry of items) {
+      const result = await window.api.sftp.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, false)
+      if (result.conflicts.length) pending.push({ entry, result })
+    }
+    const conflicts = pending.flatMap(({ result }) => result.conflicts)
+    if (conflicts.length && confirmOverwrite({ transferIds: [], conflicts })) {
+      for (const { entry } of pending) await window.api.sftp.enqueueDownload(sessionId.value, entry.path, localDirectory, entry.type, true)
     }
     transferPanelOpen.value = true
   } catch (error) { showError(error) }
@@ -379,11 +443,11 @@ function closeEntryMenu(): void {
           <table class="sftp-table">
             <thead><tr><th>{{ t('name') }}</th><th>{{ t('size') }}</th><th>{{ t('modified') }}</th><th>{{ t('actions') }}</th></tr></thead>
             <tbody>
-              <tr v-if="localPath && localParentPath !== localPath" class="parent-entry" @click="refreshLocal(localParentPath)"><td><span class="file-icon">{{ fileIcon('directory') }}</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
+              <tr v-if="localPath && localParentPath !== localPath" class="parent-entry" @dblclick="refreshLocal(localParentPath)"><td><span class="file-icon">{{ fileIcon('directory') }}</span><button class="file-name" @keydown.enter.prevent="refreshLocal(localParentPath)">..</button></td><td>—</td><td>—</td><td></td></tr>
               <tr v-if="localLoading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
               <tr v-else-if="!localEntries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
-              <tr v-for="entry in localEntries" :key="entry.path" draggable="true" @dragstart="startEntryDrag($event, 'local', entry)" @dblclick="openLocalEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'local', entry)">
-                <td><span class="file-icon">{{ fileIcon(entry.type, entry.name) }}</span><button class="file-name" @click="openLocalEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="queueUploads([entry.path])">{{ t('upload') }}</button></td>
+              <tr v-for="entry in localEntries" :key="entry.path" :class="{ selected: isSelected('local', entry.path) }" draggable="true" @click="selectEntry($event, 'local', entry)" @dragstart="startEntryDrag($event, 'local', entry)" @dblclick="openLocalEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'local', entry)">
+                <td><span class="file-icon">{{ fileIcon(entry.type, entry.name) }}</span><button class="file-name" @keydown.enter.prevent="openLocalEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click.stop="queueUploads([entry.path])">{{ t('upload') }}</button></td>
               </tr>
             </tbody>
           </table>
@@ -396,11 +460,11 @@ function closeEntryMenu(): void {
           <table class="sftp-table">
             <thead><tr><th>{{ t('name') }}</th><th>{{ t('size') }}</th><th>{{ t('modified') }}</th><th>{{ t('actions') }}</th></tr></thead>
             <tbody>
-              <tr v-if="path !== '/'" class="parent-entry" @click="refresh(parentRemotePath(path))"><td><span class="file-icon">{{ fileIcon('directory') }}</span><button class="file-name">..</button></td><td>—</td><td>—</td><td></td></tr>
+              <tr v-if="path !== '/'" class="parent-entry" @dblclick="refresh(parentRemotePath(path))"><td><span class="file-icon">{{ fileIcon('directory') }}</span><button class="file-name" @keydown.enter.prevent="refresh(parentRemotePath(path))">..</button></td><td>—</td><td>—</td><td></td></tr>
               <tr v-if="loading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
               <tr v-else-if="!entries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
-              <tr v-for="entry in entries" :key="entry.path" draggable="true" @dragstart="startEntryDrag($event, 'remote', entry)" @dblclick="openEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'remote', entry)">
-                <td><span class="file-icon">{{ fileIcon(entry.type, entry.name) }}</span><button class="file-name" @click="openEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click="download(entry)">{{ t('download') }}</button><button @click="renameEntry(entry)">{{ t('rename') }}</button><button class="danger" @click="removeEntry(entry)">{{ t('remove') }}</button></td>
+              <tr v-for="entry in entries" :key="entry.path" :class="{ selected: isSelected('remote', entry.path) }" draggable="true" @click="selectEntry($event, 'remote', entry)" @dragstart="startEntryDrag($event, 'remote', entry)" @dblclick="entry.type === 'directory' && openEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'remote', entry)">
+                <td><span class="file-icon">{{ fileIcon(entry.type, entry.name) }}</span><button class="file-name" @click="entry.type === 'file' && !$event.ctrlKey && !$event.metaKey && !$event.shiftKey && $event.detail < 2 && openEntry(entry)" @keydown.enter.prevent="entry.type === 'directory' && openEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click.stop="download(entry)">{{ t('download') }}</button><button @click.stop="renameEntry(entry)">{{ t('rename') }}</button><button class="danger" @click.stop="removeEntry(entry)">{{ t('remove') }}</button></td>
               </tr>
             </tbody>
           </table>
@@ -427,7 +491,7 @@ function closeEntryMenu(): void {
     </section>
     <div v-if="entryMenu" class="sftp-context-menu" :style="{ left: `${entryMenu.x}px`, top: `${entryMenu.y}px` }" @pointerdown.stop>
       <button v-if="entryMenu.side === 'local'" @click="runEntryAction('upload')">⇧ {{ t('upload') }}</button>
-      <template v-else><button v-if="entryMenu.entry.type === 'file'" @click="runEntryAction('open')">{{ t('openFile') }}</button><button @click="runEntryAction('download')">⇩ {{ t('download') }}</button><button @click="runEntryAction('rename')">{{ t('rename') }}</button><button class="danger" @click="runEntryAction('remove')">{{ t('remove') }}</button></template>
+      <template v-else><button v-if="selectedEntries('remote').length === 1 && entryMenu.entry.type === 'file'" @click="runEntryAction('open')">{{ t('openFile') }}</button><button @click="runEntryAction('download')">⇩ {{ t('download') }}</button><button v-if="selectedEntries('remote').length === 1" @click="runEntryAction('rename')">{{ t('rename') }}</button><button class="danger" @click="runEntryAction('remove')">{{ t('remove') }}</button></template>
     </div>
     <div v-if="renamingEntry" class="modal-layer" @click.self="renamingEntry = null">
       <form class="connection-dialog" @submit.prevent="submitRename">

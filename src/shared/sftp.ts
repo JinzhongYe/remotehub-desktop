@@ -59,6 +59,17 @@ export function transferProgress(item: Pick<SftpTransferItem, 'transferred' | 't
   return item.total > 0 ? Math.min(100, Math.max(0, Math.round(item.transferred / item.total * 100))) : 0
 }
 
+export function selectSftpPaths(paths: string[], selected: string[], target: string, anchor: string, range: boolean, toggle: boolean): string[] {
+  const start = paths.indexOf(anchor)
+  const end = paths.indexOf(target)
+  if (range && start >= 0 && end >= 0) {
+    const selection = paths.slice(Math.min(start, end), Math.max(start, end) + 1)
+    return toggle ? [...new Set([...selected, ...selection])] : selection
+  }
+  if (toggle) return selected.includes(target) ? selected.filter((path) => path !== target) : [...selected, target]
+  return [target]
+}
+
 export function normalizeRemotePath(path: string): string {
   const absolute = path.startsWith('/') ? path : `/${path}`
   const parts: string[] = []

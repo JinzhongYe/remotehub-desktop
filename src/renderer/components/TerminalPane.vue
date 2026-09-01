@@ -194,7 +194,7 @@ function toggleCodexStatus(): void {
     overviewOpen.value = false
     codexOpen.value = true
     void refreshCodexStatus()
-    codexRefreshTimer = window.setInterval(() => void refreshCodexStatus(), 10_000)
+    codexRefreshTimer = window.setInterval(() => void refreshCodexStatus(), 120_000)
   }
   void nextTick(resizeTerminal)
 }

@@ -195,7 +195,7 @@ async function removeGroup(group: Group): Promise<void> {
   <div class="app-frame" :class="{ darwin: appInfo?.platform === 'darwin', fullscreen }">
     <header class="top-toolbar">
       <div class="brand"><img class="brand-mark" :src="appIcon" alt=""><div><strong>RemoteHub</strong><small>DESKTOP WORKBENCH</small></div></div>
-      <div class="toolbar-context"><button class="toolbar-label" @click="workspace.activate('welcome')">{{ t('workspace') }}</button><span class="toolbar-separator">/</span><span>{{ connectionStore.selected?.name || t('noSelection') }}</span></div>
+      <div class="toolbar-context"><button class="toolbar-label" @click="workspace.activate('welcome')">{{ t('workspace') }}</button><span class="toolbar-separator">/</span><span>{{ workspace.activeTab?.title }}</span></div>
       <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted theme-toggle" :title="theme === 'dark' ? t('lightMode') : t('darkMode')" :aria-label="theme === 'dark' ? t('lightMode') : t('darkMode')" @click="toggleTheme">{{ theme === 'dark' ? '☀' : '☾' }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button></div>
     </header>
     <div class="app-body">
