@@ -7,6 +7,7 @@ import type { CodexRateWindow, CodexStatus, CodexDailyUsage } from '../../shared
 import { withoutAnsiBackgrounds } from '../../shared/ansi'
 import type { ServerStatus, SshDataEvent, SshSessionStatus, SshStatusEvent } from '../../shared/ssh'
 import { t } from '../i18n'
+import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
 import UiIcon from './UiIcon.vue'
 
 const props = defineProps<{ connectionId: string; active: boolean; local?: boolean; sftpOpen?: boolean }>()
@@ -33,11 +34,10 @@ let sessionId: string | null = null
 let disposed = false
 let removeDataListener: (() => void) | undefined
 let removeStatusListener: (() => void) | undefined
-let removeResizeListener: (() => void) | undefined
 let removeInputListener: (() => void) | undefined
 let removeSelectionListener: (() => void) | undefined
 let removeContextMenuListener: (() => void) | undefined
-let resizeObserver: ResizeObserver | undefined
+let terminalLayout: ReturnType<typeof observeTerminalLayout> | undefined
 let themeObserver: MutationObserver | undefined
 let codexRefreshTimer: number | undefined
 let pendingTerminalEscape = ''
@@ -112,13 +112,7 @@ function flushPending(id: string): void {
 }
 
 function resizeTerminal(): void {
-  if (!terminal || !fitAddon) return
-  try {
-    fitAddon.fit()
-    if (sessionId) void (props.local ? window.api.shell.resize(sessionId, terminal.cols, terminal.rows) : window.api.ssh.resize(sessionId, terminal.cols, terminal.rows))
-  } catch {
-    // The terminal can briefly be hidden while a workspace tab changes.
-  }
+  terminalLayout?.fit()
 }
 
 async function connect(): Promise<void> {
@@ -344,8 +338,9 @@ async function disconnect(): Promise<void> {
   status.value = 'closed'
 }
 
-onMounted(() => {
-  if (!terminalHost.value) return
+onMounted(async () => {
+  await loadTerminalFont(14)
+  if (disposed || !terminalHost.value) return
   terminal = new Terminal({
     convertEol: true,
     cursorBlink: true,
@@ -363,8 +358,9 @@ onMounted(() => {
   terminal.open(terminalHost.value)
   themeObserver = new MutationObserver(() => { if (terminal) { terminal.options.theme = terminalTheme(); terminal.options.minimumContrastRatio = terminalContrastRatio() } })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-  resizeObserver = new ResizeObserver(() => { if (props.active) resizeTerminal() })
-  resizeObserver.observe(terminalHost.value)
+  terminalLayout = observeTerminalLayout(terminalHost.value, terminal, fitAddon, () => {
+    if (sessionId && terminal) void (props.local ? window.api.shell.resize(sessionId, terminal.cols, terminal.rows) : window.api.ssh.resize(sessionId, terminal.cols, terminal.rows)).catch(() => undefined)
+  })
   removeDataListener = props.local ? window.api.shell.onData(handleData) : window.api.ssh.onData(handleData)
   removeStatusListener = props.local ? window.api.shell.onStatus(handleStatus) : window.api.ssh.onStatus(handleStatus)
   const input = terminal.onData((data) => {
@@ -378,9 +374,6 @@ onMounted(() => {
     hasSelection.value = terminal?.hasSelection() ?? false
   })
   removeSelectionListener = () => selection.dispose()
-  const onWindowResize = (): void => resizeTerminal()
-  window.addEventListener('resize', onWindowResize)
-  removeResizeListener = () => window.removeEventListener('resize', onWindowResize)
   const closeContextMenu = (): void => { contextMenu.value = null }
   document.addEventListener('pointerdown', closeContextMenu)
   removeContextMenuListener = () => document.removeEventListener('pointerdown', closeContextMenu)
@@ -397,11 +390,10 @@ onBeforeUnmount(() => {
   closeCodexStatus()
   removeDataListener?.()
   removeStatusListener?.()
-  removeResizeListener?.()
   removeInputListener?.()
   removeSelectionListener?.()
   removeContextMenuListener?.()
-  resizeObserver?.disconnect()
+  terminalLayout?.dispose()
   themeObserver?.disconnect()
   if (sessionId) void (props.local ? window.api.shell.disconnect(sessionId) : window.api.ssh.disconnect(sessionId)).catch(() => undefined)
   terminal?.dispose()

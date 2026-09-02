@@ -5,6 +5,7 @@ import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 import type { SerialDataEvent, SerialSessionStatus, SerialStatusEvent } from '../../shared/serial'
 import { t } from '../i18n'
+import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
 
 const props = defineProps<{ connectionId: string; active: boolean }>()
 const terminalHost = ref<HTMLElement | null>(null)
@@ -16,9 +17,8 @@ let sessionId = ''
 let disposed = false
 let removeDataListener: (() => void) | undefined
 let removeStatusListener: (() => void) | undefined
-let removeResizeListener: (() => void) | undefined
 let removeInputListener: (() => void) | undefined
-let resizeObserver: ResizeObserver | undefined
+let terminalLayout: ReturnType<typeof observeTerminalLayout> | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SerialStatusEvent>()
 
@@ -39,7 +39,7 @@ function handleStatus(event: SerialStatusEvent): void {
 }
 
 function fit(): void {
-  try { fitAddon?.fit() } catch { /* hidden tab */ }
+  terminalLayout?.fit()
 }
 
 async function connect(): Promise<void> {
@@ -80,14 +80,14 @@ async function disconnect(): Promise<void> {
   status.value = 'closed'
 }
 
-onMounted(() => {
-  if (!terminalHost.value) return
+onMounted(async () => {
+  await loadTerminalFont(13)
+  if (disposed || !terminalHost.value) return
   terminal = new Terminal({ convertEol: true, cursorBlink: true, fontFamily: '"JetBrains Mono", "Noto Sans SC", serif', fontSize: 13, fontWeight: '400', fontWeightBold: '600', minimumContrastRatio: 4.5, theme: { background: '#1a1b1d', foreground: '#e0e0e0', cursor: '#919292' }, scrollback: 10000 })
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
-  resizeObserver = new ResizeObserver(() => { if (props.active) fit() })
-  resizeObserver.observe(terminalHost.value)
+  terminalLayout = observeTerminalLayout(terminalHost.value, terminal, fitAddon)
   removeDataListener = window.api.serial.onData(handleData)
   removeStatusListener = window.api.serial.onStatus(handleStatus)
   const input = terminal.onData((data) => {
@@ -97,9 +97,6 @@ onMounted(() => {
     })
   })
   removeInputListener = () => input.dispose()
-  const onResize = (): void => fit()
-  window.addEventListener('resize', onResize)
-  removeResizeListener = () => window.removeEventListener('resize', onResize)
   void connect()
   fit()
 })
@@ -110,9 +107,8 @@ onBeforeUnmount(() => {
   disposed = true
   removeDataListener?.()
   removeStatusListener?.()
-  removeResizeListener?.()
   removeInputListener?.()
-  resizeObserver?.disconnect()
+  terminalLayout?.dispose()
   if (sessionId) void window.api.serial.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
 })

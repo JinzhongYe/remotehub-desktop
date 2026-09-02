@@ -225,7 +225,7 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .split-pane-heading small { margin-left: auto; color: var(--blue); font-size: 9px; text-transform: uppercase; letter-spacing: .8px; }
 .split-pane-heading button { margin-left: auto; border: 0; color: var(--muted); background: transparent; font-size: 15px; }
 .workspace-placeholder { height: 100%; overflow: auto; }
-.terminal-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--terminal-bg); font-family: var(--font-ui); }
+.terminal-pane { display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; background: var(--terminal-bg); font-family: var(--font-ui); }
 .terminal-toolbar { display: flex; align-items: center; min-height: 44px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--muted); background: var(--surface); }
 .terminal-identity { display: flex; min-width: 0; align-items: center; gap: 8px; padding-right: 10px; }
 .terminal-kind { display: inline-flex; height: 24px; align-items: center; gap: 5px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--ssh) 34%, var(--line)); border-radius: 4px; color: var(--ssh); background: color-mix(in srgb, var(--ssh) 8%, transparent); font-family: var(--font-mono); }
@@ -250,11 +250,11 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .terminal-host-key code { color: var(--text); user-select: all; }
 .terminal-host-key .toolbar-button { margin-left: auto; }
 .terminal-body { display: flex; min-width: 0; min-height: 0; flex: 1; }
-.terminal-host { min-width: 0; min-height: 0; flex: 1; overflow: hidden; background: var(--terminal-bg); }
-.terminal-host .xterm { height: 100%; padding: 14px 16px; }
-.terminal-host .xterm-viewport { overflow-y: auto !important; }
+.terminal-host { --terminal-row-height: 20px; --terminal-padding-y: 14px; min-width: 0; min-height: 0; flex: 1; overflow: hidden; background: var(--terminal-bg); }
+.terminal-host .xterm { width: 100%; height: 100%; padding: var(--terminal-padding-y) 16px; }
+/* Paint the entire viewport, including the space beyond the last character/row. */
+.terminal-host .xterm-viewport { overflow-y: auto !important; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent var(--terminal-row-height), var(--terminal-row) var(--terminal-row-height), var(--terminal-row) calc(var(--terminal-row-height) * 2)); background-position: 0 var(--terminal-padding-y); }
 .terminal-host .xterm-screen { cursor: text; }
-.terminal-host .xterm-rows > div:nth-child(even) { background: var(--terminal-row); }
 .terminal-context-menu { position: fixed; z-index: 30; min-width: 82px; padding: 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--menu); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
 .terminal-context-menu button { width: 100%; padding: 6px 12px; border: 0; border-radius: 3px; color: var(--text); background: transparent; text-align: left; }
 .terminal-context-menu button:hover { background: var(--hover); }
