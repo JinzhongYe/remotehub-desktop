@@ -2,7 +2,7 @@
 import { defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import type { Connection } from '../../shared/types'
 import { useConnectionStore } from '../stores/connection'
-import { clampSplitRatio, normalizeSftpPosition, useWorkspaceStore, type SftpPosition, type WorkspaceViewCount } from '../stores/workspace'
+import { clampSplitRatio, useWorkspaceStore, type WorkspaceViewCount } from '../stores/workspace'
 import TerminalPane from './TerminalPane.vue'
 import SerialTerminalPane from './SerialTerminalPane.vue'
 import SftpPane from './SftpPane.vue'
@@ -17,8 +17,6 @@ const DatabasePane = defineAsyncComponent(() => import('./DatabasePane.vue'))
 const props = defineProps<{ shortcutModifier: string }>()
 const workspace = useWorkspaceStore()
 const connections = useConnectionStore()
-const sftpPosition = ref<SftpPosition>(normalizeSftpPosition(localStorage.getItem('remotehub.sftpPosition')))
-const sftpOpen = ref(localStorage.getItem('remotehub.sftpOpen') !== 'false')
 const databaseConnected = ref<Record<string, boolean>>({})
 const workspaceContent = ref<HTMLElement | null>(null)
 const workspaceSplitX = ref(50)
@@ -80,16 +78,6 @@ function handleShortcut(event: KeyboardEvent): void {
   event.preventDefault()
 }
 
-function setSftpPosition(position: SftpPosition): void {
-  sftpPosition.value = position
-  localStorage.setItem('remotehub.sftpPosition', position)
-}
-
-function toggleSftp(): void {
-  sftpOpen.value = !sftpOpen.value
-  localStorage.setItem('remotehub.sftpOpen', String(sftpOpen.value))
-}
-
 function setViewCount(count: WorkspaceViewCount): void {
   workspaceSplitX.value = 50
   workspaceSplitY.value = 50
@@ -128,7 +116,7 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
   <section class="workspace-shell">
     <div class="tab-bar">
       <div class="tab-strip" role="tablist">
-        <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryId === tab.id }" role="tab" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)">
+        <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryId === tab.id }" role="tab" :title="tab.title" :aria-label="tab.title" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)">
           <span class="tab-icon"><UiIcon :name="iconFor(tab.type)" /></span><span v-if="databaseConnected[tab.id]" class="status-dot" :title="t('connected')"></span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')"><UiIcon name="pin" :size="12" /></span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)"><UiIcon name="close" :size="14" /></button>
         </div>
         <button class="new-tab" :title="`${t('newTab')} (${shortcutModifier} T)`" :aria-label="t('newTab')" :disabled="!workspace.activeTab?.connectionId" @click="openActiveAgain"><UiIcon name="plus" /></button>
@@ -169,11 +157,11 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
       </div>
       <template v-for="tab in workspace.tabs" :key="tab.id">
         <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ primary: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id) }">
-          <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span>{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)"><UiIcon name="close" /></button></div>
+          <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span :title="tab.title">{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)"><UiIcon name="close" /></button></div>
           <div class="workspace-pane-body">
-            <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="[`sftp-${sftpPosition}`, { 'second-collapsed': !sftpOpen }]" :direction="sftpPosition === 'left' || sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="sftpPosition === 'left' || sftpPosition === 'top'" :initial="60">
-              <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="sftpOpen" @toggle-sftp="toggleSftp" /></template>
-              <template #second><SftpPane v-show="sftpOpen" :connection-id="tab.connectionId" embedded :position="sftpPosition" @position="setSftpPosition" /></template>
+            <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="[`sftp-${tab.sftpPosition ?? 'bottom'}`, { 'second-collapsed': tab.sftpOpen === false }]" :direction="tab.sftpPosition === 'left' || tab.sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="tab.sftpPosition === 'left' || tab.sftpPosition === 'top'" :initial="60">
+              <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="tab.sftpOpen !== false" @toggle-sftp="workspace.toggleSftp(tab.id)" /></template>
+              <template #second><SftpPane v-show="tab.sftpOpen !== false" :connection-id="tab.connectionId" embedded :position="tab.sftpPosition ?? 'bottom'" @position="workspace.setSftpPosition(tab.id, $event)" /></template>
             </SplitPane>
             <TerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'shell'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" local />
             <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />

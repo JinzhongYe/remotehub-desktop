@@ -20,6 +20,16 @@ export interface WorkspaceTab {
   connectionId?: string
   closable: boolean
   pinned?: boolean
+  sftpOpen?: boolean
+  sftpPosition?: SftpPosition
+}
+
+function tabSftpPreferences(value: Record<string, unknown> = {}): Pick<WorkspaceTab, 'sftpOpen' | 'sftpPosition'> {
+  const storage = typeof localStorage === 'undefined' ? undefined : localStorage
+  return {
+    sftpOpen: typeof value.sftpOpen === 'boolean' ? value.sftpOpen : storage?.getItem('remotehub.sftpOpen') !== 'false',
+    sftpPosition: normalizeSftpPosition(typeof value.sftpPosition === 'string' ? value.sftpPosition : storage?.getItem('remotehub.sftpPosition') ?? null)
+  }
 }
 
 const STORAGE_KEY = 'remotehub.workspace'
@@ -40,8 +50,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function openConnection(connectionId: string, title: string, type: 'terminal' | 'sftp' | 'sql'): void {
     const id = `connection:${connectionId}:${++nextTabId}`
-    tabs.value.push({ id, type, title, connectionId, closable: true })
+    tabs.value.push({ id, type, title, connectionId, closable: true, ...(type === 'terminal' ? tabSftpPreferences() : {}) })
     activate(id)
+  }
+
+  function toggleSftp(id: string): void {
+    const tab = tabs.value.find((item) => item.id === id && item.type === 'terminal')
+    if (tab) tab.sftpOpen = tab.sftpOpen === false
+  }
+
+  function setSftpPosition(id: string, position: SftpPosition): void {
+    const tab = tabs.value.find((item) => item.id === id && item.type === 'terminal')
+    if (tab) tab.sftpPosition = normalizeSftpPosition(position)
   }
 
   function activate(id: string): void {
@@ -151,7 +171,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         title: value.title as string,
         connectionId: value.connectionId as string,
         closable: true,
-        pinned: value.pinned === true
+        pinned: value.pinned === true,
+        ...(value.type === 'terminal' ? tabSftpPreferences(value) : {})
       })) : []
       const unique = restored.filter((tab, index) => restored.findIndex((item) => item.id === tab.id) === index)
       tabs.value = [{ ...welcomeTab }, ...unique]
@@ -186,5 +207,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     viewCount.value = secondaryIds.value.length >= 2 ? 4 : secondaryIds.value.length === 1 ? 2 : 1
   }
 
-  return { tabs, activeId, secondaryId, secondaryIds, viewCount, activeTab, visibleIds, openConnection, activate, close, togglePinned, closeOthers, closeRight, closeAll, openSplit, closeSplit, setViewCount, closePane, isVisible, canUseViewCount, cycle, removeConnection, restore }
+  return { tabs, activeId, secondaryId, secondaryIds, viewCount, activeTab, visibleIds, openConnection, activate, close, togglePinned, toggleSftp, setSftpPosition, closeOthers, closeRight, closeAll, openSplit, closeSplit, setViewCount, closePane, isVisible, canUseViewCount, cycle, removeConnection, restore }
 })
