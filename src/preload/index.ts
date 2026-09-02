@@ -5,6 +5,7 @@ import type { SftpTransferEvent } from '../shared/sftp'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
 import type { DatabaseCsvExport, DatabaseQueryRequest } from '../shared/database'
 import type { LocalShellDataEvent, LocalShellStatusEvent } from '../shared/local-shell'
+import type { LocalDirectory } from '../shared/local-files'
 
 function remoteFiles(prefix: 'sftp' | 'ftp') {
   return {
@@ -38,7 +39,7 @@ const api = {
     copyText: (text: string) => ipcRenderer.invoke('app:copyText', text),
     readText: () => ipcRenderer.invoke('app:readText'),
     setTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('app:setTheme', theme),
-    listLocalDirectory: (path?: string) => ipcRenderer.invoke('app:listLocalDirectory', path),
+    listLocalDirectory: (path?: string): Promise<LocalDirectory> => ipcRenderer.invoke('app:listLocalDirectory', path),
     choosePrivateKey: () => ipcRenderer.invoke('app:choosePrivateKey'),
     chooseDatabaseFile: () => ipcRenderer.invoke('app:chooseDatabaseFile'),
     chooseShellDirectory: () => ipcRenderer.invoke('app:chooseShellDirectory'),

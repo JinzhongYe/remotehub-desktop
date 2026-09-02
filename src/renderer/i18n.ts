@@ -42,7 +42,12 @@ const connectionUiMessages = {
   en: { allConnections: 'All connections (double-click to open)', connect: 'Connect', paste: 'Paste', importConnections: 'Import connections JSON', exportConnections: 'Export connections JSON', importedConnections: 'Imported {count} connections', exportedConnections: 'Exported {count} connections', importFailed: 'Could not import connections', exportFailed: 'Could not export connections', lightMode: 'Light mode', darkMode: 'Dark mode', localFiles: 'Local', remoteFiles: 'Remote', chooseFolder: 'Choose folder', sftpLayout: 'SFTP dock position', dockRight: 'Right', dockLeft: 'Left', dockTop: 'Top', dockBottom: 'Bottom', collapseConnections: 'Collapse connections', expandConnections: 'Expand connections', showSftp: 'Open SFTP files', hideSftp: 'Close SFTP files', localShell: 'Local Shell', workingDirectory: 'Working directory', localShellUnavailable: 'Local shell is unavailable', serverOverview: 'Server overview', basicInfo: 'Basic information', user: 'User', system: 'System', uptime: 'Uptime', cpu: 'CPU', cpuCores: 'cores', loadAverage: 'Load average', memory: 'Physical memory', swap: 'Swap memory', disk: 'Root disk', networkReceived: 'Total received', networkSent: 'Total sent', processes: 'Processes', pid: 'PID', command: 'Process', serverStatusUnavailable: 'Could not read server status', noProcessData: 'No process data available', codexStatus: 'Codex usage', lastChecked: 'Last checked', codexStatusUnavailable: 'Could not read Codex usage', fiveHourQuota: '5-hour quota', weeklyQuota: '7-day quota', quotaWindow: '{hours}-hour quota', quotaRemaining: 'remaining', quotaUsed: 'Used', resetsAt: 'Resets', noQuotaData: 'No quota data available', dailyTokenUsage: 'Daily token usage', lifetimeTokens: 'Lifetime tokens', peakDailyTokens: 'Peak day' }
 } as const
 
-type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en | keyof typeof databaseUiMessages.en | keyof typeof connectionUiMessages.en
+const localBrowserMessages = {
+  'zh-CN': { localComputer: '此电脑', localDesktop: '桌面', localDocuments: '文档', localDownloads: '下载' },
+  en: { localComputer: 'This computer', localDesktop: 'Desktop', localDocuments: 'Documents', localDownloads: 'Downloads' }
+} as const
+
+type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en | keyof typeof databaseUiMessages.en | keyof typeof connectionUiMessages.en | keyof typeof localBrowserMessages.en
 
 const stored = localStorage.getItem('remotehub.locale')
 export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
@@ -54,7 +59,8 @@ export function t(key: MessageKey, values: Record<string, string | number> = {})
   const databaseUi = databaseUiMessages[locale.value] as Record<string, string>
   const connectionUi = connectionUiMessages[locale.value] as Record<string, string>
   const defaults = messages[locale.value] as Record<string, string>
-  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), connectionUi[key] || databaseUi[key] || cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
+  const localBrowser = localBrowserMessages[locale.value] as Record<string, string>
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), localBrowser[key] || connectionUi[key] || databaseUi[key] || cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
 }
 
 export function toggleLocale(): void {

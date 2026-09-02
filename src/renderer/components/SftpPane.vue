@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SftpEntry, SftpQueueResult, SftpTransferItem, SftpTransferStatus } from '../../shared/sftp'
 import { joinRemotePath, parentRemotePath, selectSftpPaths, transferProgress } from '../../shared/sftp'
+import { LOCAL_COMPUTER_ROOT, localNavigationTarget, localTransferDirectory, type LocalEntry } from '../../shared/local-files'
 import { t } from '../i18n'
 import { confirmDialog } from '../dialog'
 import FileTypeIcon from './FileTypeIcon.vue'
@@ -9,8 +10,6 @@ import SplitPane from './SplitPane.vue'
 import UiIcon from './UiIcon.vue'
 
 type SftpPosition = 'right' | 'left' | 'top' | 'bottom'
-type LocalEntry = Pick<SftpEntry, 'name' | 'path' | 'type' | 'size' | 'modifiedAt'>
-type LocalDirectory = { path: string; parentPath: string; entries: LocalEntry[] }
 
 const props = defineProps<{ connectionId: string; embedded?: boolean; position?: SftpPosition; protocol?: 'sftp' | 'ftp' }>()
 const emit = defineEmits<{ position: [position: SftpPosition] }>()
@@ -27,6 +26,7 @@ const pendingFingerprint = ref('')
 const transfers = ref<SftpTransferItem[]>([])
 const transferPanelOpen = ref(true)
 const localPath = ref('')
+const isLocalComputerRoot = computed(() => localPath.value === LOCAL_COMPUTER_ROOT)
 const localPathInput = ref('')
 const localParentPath = ref('')
 const localEntries = ref<LocalEntry[]>([])
@@ -46,6 +46,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 let localSelectionAnchor = ''
 let remoteSelectionAnchor = ''
+let localRequestId = 0
 
 const activeTransfers = computed(() => transfers.value.filter((item) => item.status === 'running' || item.status === 'queued' || item.status === 'paused'))
 const finishedTransfers = computed(() => transfers.value.filter((item) => item.status === 'completed' || item.status === 'error' || item.status === 'cancelled'))
@@ -156,21 +157,31 @@ function openEntry(entry: SftpEntry): void {
 }
 
 async function refreshLocal(nextPath?: string): Promise<void> {
+  const requestId = ++localRequestId
   localLoading.value = true
   localError.value = ''
+  entryMenu.value = null
   try {
-    const result = await window.api.app.listLocalDirectory(nextPath || localPath.value || undefined) as LocalDirectory
+    const result = await window.api.app.listLocalDirectory(localNavigationTarget(nextPath, localPath.value))
+    if (disposed || requestId !== localRequestId) return
     localPath.value = result.path
-    localPathInput.value = result.path
+    localPathInput.value = result.path === LOCAL_COMPUTER_ROOT ? '' : result.path
     localParentPath.value = result.parentPath
     localEntries.value = result.entries
     selectedLocalPaths.value = retainSelection(selectedLocalPaths.value, result.entries)
     if (!selectedLocalPaths.value.includes(localSelectionAnchor)) localSelectionAnchor = ''
   } catch (error) {
-    localError.value = error instanceof Error ? error.message : t('operationFailed')
+    if (!disposed && requestId === localRequestId) localError.value = error instanceof Error ? error.message : t('operationFailed')
   } finally {
-    localLoading.value = false
+    if (!disposed && requestId === localRequestId) localLoading.value = false
   }
+}
+
+function localEntryName(entry: LocalEntry): string {
+  if (entry.location === 'desktop') return t('localDesktop')
+  if (entry.location === 'documents') return t('localDocuments')
+  if (entry.location === 'downloads') return t('localDownloads')
+  return entry.name
 }
 
 function openLocalEntry(entry: LocalEntry): void {
@@ -183,6 +194,7 @@ async function chooseLocalDirectory(): Promise<void> {
 }
 
 function showEntryMenu(event: MouseEvent, side: 'local' | 'remote', entry: LocalEntry | SftpEntry): void {
+  if (side === 'local' && isLocalComputerRoot.value) return
   if (!isSelected(side, entry.path)) {
     if (side === 'local') {
       selectedLocalPaths.value = [entry.path]
@@ -300,6 +312,7 @@ async function queueUploads(paths: string[]): Promise<void> {
 }
 
 function startEntryDrag(event: DragEvent, side: 'local' | 'remote', entry: LocalEntry | SftpEntry): void {
+  if (side === 'local' && isLocalComputerRoot.value) { event.preventDefault(); return }
   const selected = side === 'local' ? selectedLocalPaths : selectedRemotePaths
   if (!selected.value.includes(entry.path)) {
     selected.value = [entry.path]
@@ -337,7 +350,7 @@ function dropOnLocal(event: DragEvent): void {
 
 async function download(input: SftpEntry | SftpEntry[]): Promise<void> {
   if (!sessionId.value) return
-  const localDirectory = localPath.value || await window.api.app.chooseDownloadDirectory()
+  const localDirectory = localTransferDirectory(localPath.value) || await window.api.app.chooseDownloadDirectory()
   if (!localDirectory) return
   const items = Array.isArray(input) ? input : [input]
   try {
@@ -454,7 +467,7 @@ function closeEntryMenu(): void {
     <SplitPane class="sftp-file-split" :direction="position === 'left' || position === 'right' ? 'vertical' : 'horizontal'">
       <template #first><section class="sftp-browser local-browser" @dragover.prevent @drop.stop="dropOnLocal">
         <div class="sftp-browser-title"><span class="sftp-browser-mark" aria-hidden="true"><UiIcon name="drive" /></span><strong>{{ t('localFiles') }}</strong><span class="sftp-entry-count">{{ localEntries.length }}</span><button class="text-button" @click="chooseLocalDirectory">{{ t('chooseFolder') }}</button></div>
-        <div class="sftp-browser-nav"><button :title="t('parentFolder')" :aria-label="t('parentFolder')" :disabled="!localPath || localParentPath === localPath" @click="refreshLocal(localParentPath)"><UiIcon name="arrowUp" /></button><form class="sftp-path" @submit.prevent="refreshLocal(localPathInput)"><input v-model="localPathInput" :aria-label="t('localFiles')"><button type="submit">{{ t('go') }}</button></form><button :title="t('refresh')" :aria-label="t('refresh')" @click="refreshLocal()"><UiIcon name="refresh" /></button></div>
+        <div class="sftp-browser-nav"><button :title="t('parentFolder')" :aria-label="t('parentFolder')" :disabled="localLoading || !localPath || localParentPath === localPath" @click="refreshLocal(localParentPath)"><UiIcon name="arrowUp" /></button><button :title="t('localComputer')" :aria-label="t('localComputer')" :disabled="localLoading || isLocalComputerRoot" @click="refreshLocal(LOCAL_COMPUTER_ROOT)"><UiIcon name="drive" /></button><form class="sftp-path" @submit.prevent="refreshLocal(localPathInput)"><input v-model="localPathInput" :aria-label="t('localFiles')" :placeholder="t('localComputer')"><button type="submit">{{ t('go') }}</button></form><button :title="t('refresh')" :aria-label="t('refresh')" @click="refreshLocal()"><UiIcon name="refresh" /></button></div>
         <div v-if="localError" class="sftp-error"><span>{{ localError }}</span><button class="icon-button" :aria-label="t('cancel')" @click="localError = ''"><UiIcon name="close" /></button></div>
         <div class="sftp-table-wrap">
           <table class="sftp-table">
@@ -463,8 +476,8 @@ function closeEntryMenu(): void {
               <tr v-if="localPath && localParentPath !== localPath" class="parent-entry" @dblclick="refreshLocal(localParentPath)"><td><FileTypeIcon type="directory" /><button class="file-name" @click.stop="refreshLocal(localParentPath)" @keydown.enter.prevent="refreshLocal(localParentPath)">..</button></td><td>—</td><td>—</td><td></td></tr>
               <tr v-if="localLoading"><td colspan="4" class="sftp-empty">{{ t('loading') }}</td></tr>
               <tr v-else-if="!localEntries.length"><td colspan="4" class="sftp-empty">{{ t('emptyFolder') }}</td></tr>
-              <tr v-for="entry in localEntries" :key="entry.path" :class="{ selected: isSelected('local', entry.path) }" draggable="true" @click="selectEntry($event, 'local', entry)" @dragstart="startEntryDrag($event, 'local', entry)" @dblclick="openLocalEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'local', entry)">
-                <td><FileTypeIcon :type="entry.type" :name="entry.name" /><button class="file-name" @keydown.enter.prevent="openLocalEntry(entry)">{{ entry.name }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button @click.stop="queueUploads([entry.path])"><UiIcon name="upload" /> {{ t('upload') }}</button></td>
+              <tr v-for="entry in localEntries" :key="entry.path" :class="{ selected: isSelected('local', entry.path) }" :draggable="!isLocalComputerRoot" @click="selectEntry($event, 'local', entry)" @dragstart="startEntryDrag($event, 'local', entry)" @dblclick="openLocalEntry(entry)" @contextmenu.prevent="showEntryMenu($event, 'local', entry)">
+                <td><FileTypeIcon :type="entry.type" :name="entry.name" /><button class="file-name" @keydown.enter.prevent="openLocalEntry(entry)">{{ localEntryName(entry) }}</button></td><td>{{ entry.type === 'directory' ? '—' : formatSize(entry.size) }}</td><td>{{ entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—' }}</td><td class="file-actions"><button v-if="!isLocalComputerRoot" @click.stop="queueUploads([entry.path])"><UiIcon name="upload" /> {{ t('upload') }}</button></td>
               </tr>
             </tbody>
           </table>
