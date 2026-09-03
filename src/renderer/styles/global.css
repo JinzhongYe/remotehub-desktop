@@ -158,8 +158,13 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .main-workspace { min-width: 0; flex: 1; background: #000; }
 .workspace-shell { display: flex; flex-direction: column; height: 100%; }
 .tab-bar { position: relative; z-index: 5; display: flex; align-items: stretch; height: 37px; border-bottom: 1px solid var(--line); background: #070707; }
-.tab-strip { display: flex; min-width: 0; flex: 1; overflow-x: auto; overflow-y: hidden; }
-.workspace-tab { display: flex; align-items: center; gap: 7px; min-width: 125px; max-width: 190px; flex: 0 0 auto; padding: 0 10px; border: 0; border-right: 1px solid var(--line-soft); color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
+.tab-strip { display: flex; min-width: 0; flex: 1; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; }
+.tab-strip::-webkit-scrollbar { display: none; height: 0; }
+.workspace-tab { position: relative; display: flex; align-items: center; gap: 7px; min-width: 125px; max-width: 190px; flex: 0 0 auto; padding: 0 10px; border: 0; border-right: 1px solid var(--line-soft); color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; user-select: none; }
+.workspace-tab.dragging { opacity: .45; }
+.workspace-tab.drop-before::before, .workspace-tab.drop-after::after { position: absolute; top: 3px; bottom: 3px; width: 2px; content: ''; background: var(--blue); pointer-events: none; }
+.workspace-tab.drop-before::before { left: 0; }
+.workspace-tab.drop-after::after { right: 0; }
 .workspace-tab.active { color: var(--text); background: var(--surface-raised); box-shadow: inset 0 -2px var(--blue); }
 .workspace-tab.secondary { color: var(--text); background: var(--surface); box-shadow: inset 0 -2px var(--green); }
 .tab-icon { display: grid; color: var(--blue); place-items: center; }
@@ -223,6 +228,9 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .workspace-divider.horizontal { right: 0; bottom: auto; left: 0; top: calc(var(--workspace-split-y) - 3px); height: 6px; cursor: row-resize; }
 .split-pane-heading { display: flex; height: 28px; flex: 0 0 28px; align-items: center; padding: 0 8px; border-bottom: 1px solid var(--line-soft); color: var(--muted); background: #0c0c0c; font-size: 11px; }
 .split-pane-heading span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-connection-picker { min-width: 0; width: 0; flex: 1; border: 0; border-radius: 3px; color: var(--text); background: var(--surface); font: inherit; text-overflow: ellipsis; cursor: pointer; }
+.pane-connection-picker:focus-visible { outline: 1px solid var(--blue); }
+.workspace-pane-slot.focused > .split-pane-heading { box-shadow: inset 0 -2px var(--blue); }
 .split-pane-heading small { margin-left: auto; color: var(--blue); font-size: 9px; text-transform: uppercase; letter-spacing: .8px; }
 .split-pane-heading button { margin-left: auto; border: 0; color: var(--muted); background: transparent; font-size: 15px; }
 .workspace-placeholder { height: 100%; overflow: auto; }

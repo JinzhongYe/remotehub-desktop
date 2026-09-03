@@ -23,8 +23,8 @@ const phase6Messages = {
 } as const
 
 const multiViewMessages = {
-  'zh-CN': { multiView: '窗口多视图', singleView: '单视图', doubleView: '双视图', quadView: '四视图', primaryView: '主视图', closeView: '关闭此视图' },
-  en: { multiView: 'Window multi-view', singleView: 'Single view', doubleView: 'Dual view', quadView: 'Quad view', primaryView: 'Primary', closeView: 'Close this view' }
+  'zh-CN': { multiView: '窗口多视图', singleView: '单视图', doubleView: '双视图', quadView: '四视图', primaryView: '主视图', focusedView: '当前视图', selectViewConnection: '切换此视图的连接', closeView: '关闭此视图' },
+  en: { multiView: 'Window multi-view', singleView: 'Single view', doubleView: 'Dual view', quadView: 'Quad view', primaryView: 'Primary', focusedView: 'Focused', selectViewConnection: 'Switch this view connection', closeView: 'Close this view' }
 } as const
 
 const cellDataMessages = {

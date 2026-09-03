@@ -39,14 +39,16 @@ const connectionTabTypes = new Set<WorkspaceTabType>(['terminal', 'sftp', 'sql']
 export const useWorkspaceStore = defineStore('workspace', () => {
   const tabs = ref<WorkspaceTab[]>([{ ...welcomeTab }])
   const activeId = ref('welcome')
-  const secondaryIds = ref<string[]>([])
+  // Physical pane order is independent from the currently focused tab and tab-strip order.
+  const paneIds = ref<string[]>(['welcome'])
+  const secondaryIds = computed(() => paneIds.value.filter((id) => id !== activeId.value))
   const viewCount = ref<WorkspaceViewCount>(1)
   const secondaryId = computed(() => secondaryIds.value[0] || null)
   const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeId.value) || tabs.value[0])
-  const visibleIds = computed(() => [activeId.value, ...secondaryIds.value])
+  const visibleIds = computed(() => paneIds.value)
   let nextTabId = 0
 
-  watch([tabs, activeId, secondaryIds, viewCount], persist, { deep: true })
+  watch([tabs, activeId, paneIds, viewCount], persist, { deep: true })
 
   function openConnection(connectionId: string, title: string, type: 'terminal' | 'sftp' | 'sql'): void {
     const id = `connection:${connectionId}:${++nextTabId}`
@@ -66,14 +68,37 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function activate(id: string): void {
     if (!tabs.value.some((tab) => tab.id === id)) return
-    const secondaryIndex = secondaryIds.value.indexOf(id)
-    if (secondaryIndex >= 0) {
-      const previousActive = activeId.value
-      if (tabs.value.some((tab) => tab.id === previousActive && tab.closable)) secondaryIds.value.splice(secondaryIndex, 1, previousActive)
-      else secondaryIds.value.splice(secondaryIndex, 1)
-    }
+    if (id === 'welcome') paneIds.value = ['welcome']
+    else if (!paneIds.value.includes(id)) paneIds.value[Math.max(0, paneIds.value.indexOf(activeId.value))] = id
     activeId.value = id
     normalizeViewCount()
+  }
+
+  function focusPane(id: string): void {
+    if (paneIds.value.includes(id)) activeId.value = id
+  }
+
+  function showInPane(targetId: string, id: string): void {
+    const target = paneIds.value.indexOf(targetId)
+    if (target < 0 || !tabs.value.some((tab) => tab.id === id && tab.closable)) return
+    const current = paneIds.value.indexOf(id)
+    if (current >= 0 && current !== target) paneIds.value[current] = targetId
+    paneIds.value[target] = id
+    activeId.value = id
+    normalizeViewCount()
+  }
+
+  function paneIndex(id: string): number {
+    return paneIds.value.indexOf(id)
+  }
+
+  function moveTab(id: string, targetId: string, after = false): void {
+    if (id === targetId) return
+    const index = tabs.value.findIndex((tab) => tab.id === id && tab.closable)
+    if (index < 0 || !tabs.value.some((tab) => tab.id === targetId)) return
+    const [tab] = tabs.value.splice(index, 1)
+    const target = tabs.value.findIndex((item) => item.id === targetId)
+    tabs.value.splice(Math.max(1, target + (after ? 1 : 0)), 0, tab)
   }
 
   function close(id: string, force = false): void {
@@ -81,8 +106,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const tab = tabs.value[index]
     if (!tab?.closable || (tab.pinned && !force)) return
     tabs.value.splice(index, 1)
-    secondaryIds.value = secondaryIds.value.filter((item) => item !== id)
-    if (activeId.value === id) activeId.value = tabs.value[Math.max(0, index - 1)]?.id || 'welcome'
+    const pane = paneIds.value.indexOf(id)
+    if (pane >= 0) {
+      const replacement = [...tabs.value.slice(0, index).reverse(), ...tabs.value.slice(index)].find((item) => item.closable && !paneIds.value.includes(item.id))
+      if (replacement) paneIds.value[pane] = replacement.id
+      else paneIds.value.splice(pane, 1)
+      if (activeId.value === id) activeId.value = paneIds.value[Math.min(pane, paneIds.value.length - 1)] || 'welcome'
+    }
     normalizeViewCount()
   }
 
@@ -108,9 +138,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function openSplit(id = activeId.value): void {
     const index = tabs.value.findIndex((tab) => tab.id === id && tab.closable)
     if (index < 0) return
-    secondaryIds.value = [id]
-    viewCount.value = 2
-    if (activeId.value === id) activeId.value = tabs.value.slice(0, index).reverse().find((tab) => tab.id !== id)?.id || 'welcome'
+    const first = activeId.value !== id && activeTab.value?.closable ? activeId.value
+      : [...tabs.value.slice(0, index).reverse(), ...tabs.value.slice(index + 1)].find((tab) => tab.closable && tab.id !== id)?.id
+    if (!first) return
+    paneIds.value = [first, id]
+    activeId.value = first
+    normalizeViewCount()
   }
 
   function closeSplit(): void {
@@ -119,24 +152,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function setViewCount(count: WorkspaceViewCount): void {
     if (count === 1) {
-      secondaryIds.value = []
-      viewCount.value = 1
+      paneIds.value = [activeId.value]
+      normalizeViewCount()
       return
     }
     const connectionTabs = tabs.value.filter((tab) => tab.closable)
     if (!activeTab.value?.closable || connectionTabs.length < count) return
-    const maximum = count - 1
-    const next = secondaryIds.value.filter((id) => id !== activeId.value && connectionTabs.some((tab) => tab.id === id))
+    const next = paneIds.value.filter((id) => connectionTabs.some((tab) => tab.id === id)).slice(0, count)
+    if (!next.includes(activeId.value)) next[Math.max(0, next.length - 1)] = activeId.value
     for (const tab of [...connectionTabs].reverse()) {
-      if (next.length >= maximum) break
-      if (tab.id !== activeId.value && !next.includes(tab.id)) next.push(tab.id)
+      if (next.length >= count) break
+      if (!next.includes(tab.id)) next.push(tab.id)
     }
-    secondaryIds.value = next.slice(0, maximum)
-    viewCount.value = count
+    paneIds.value = next
+    normalizeViewCount()
   }
 
   function closePane(id: string): void {
-    secondaryIds.value = secondaryIds.value.filter((item) => item !== id)
+    paneIds.value = paneIds.value.filter((item) => item !== id)
     normalizeViewCount()
   }
 
@@ -178,15 +211,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       tabs.value = [{ ...welcomeTab }, ...unique]
       activeId.value = typeof state.activeId === 'string' && tabs.value.some((tab) => tab.id === state.activeId) ? state.activeId : 'welcome'
       const restoredSecondaryIds = Array.isArray(state.secondaryIds) ? state.secondaryIds : typeof state.secondaryId === 'string' ? [state.secondaryId] : []
-      secondaryIds.value = restoredSecondaryIds.filter((id): id is string => typeof id === 'string' && id !== activeId.value && tabs.value.some((tab) => tab.id === id))
-      viewCount.value = state.viewCount === 4 ? 4 : secondaryIds.value.length ? 2 : 1
-      secondaryIds.value = secondaryIds.value.slice(0, viewCount.value - 1)
+      const restoredPanes = Array.isArray(state.paneIds) ? state.paneIds : [activeId.value, ...restoredSecondaryIds]
+      const maximum = state.viewCount === 4 ? 4 : restoredPanes.length > 1 ? 2 : 1
+      paneIds.value = restoredPanes.filter((id): id is string => typeof id === 'string' && tabs.value.some((tab) => tab.id === id)).slice(0, maximum)
       normalizeViewCount()
       nextTabId = Math.max(0, ...unique.map((tab) => Number(tab.id.match(/:(\d+)$/)?.[1] || 0)))
     } catch {
       tabs.value = [{ ...welcomeTab }]
       activeId.value = 'welcome'
-      secondaryIds.value = []
+      paneIds.value = ['welcome']
       viewCount.value = 1
     }
   }
@@ -198,14 +231,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       activeId: activeId.value,
       secondaryId: secondaryId.value,
       secondaryIds: secondaryIds.value,
+      paneIds: paneIds.value,
       viewCount: viewCount.value
     }))
   }
 
   function normalizeViewCount(): void {
-    secondaryIds.value = secondaryIds.value.filter((id, index) => id !== activeId.value && secondaryIds.value.indexOf(id) === index && tabs.value.some((tab) => tab.id === id)).slice(0, 3)
-    viewCount.value = secondaryIds.value.length >= 2 ? 4 : secondaryIds.value.length === 1 ? 2 : 1
+    paneIds.value = paneIds.value.filter((id, index) => paneIds.value.indexOf(id) === index && tabs.value.some((tab) => tab.id === id)).slice(0, 4)
+    if (paneIds.value.length > 1) paneIds.value = paneIds.value.filter((id) => id !== 'welcome')
+    if (!paneIds.value.length) paneIds.value = [tabs.value.some((tab) => tab.id === activeId.value) ? activeId.value : 'welcome']
+    if (!paneIds.value.includes(activeId.value)) activeId.value = paneIds.value[0]
+    viewCount.value = paneIds.value.length >= 3 ? 4 : paneIds.value.length === 2 ? 2 : 1
   }
 
-  return { tabs, activeId, secondaryId, secondaryIds, viewCount, activeTab, visibleIds, openConnection, activate, close, togglePinned, toggleSftp, setSftpPosition, closeOthers, closeRight, closeAll, openSplit, closeSplit, setViewCount, closePane, isVisible, canUseViewCount, cycle, removeConnection, restore }
+  return { tabs, activeId, secondaryId, secondaryIds, viewCount, activeTab, visibleIds, openConnection, activate, focusPane, showInPane, paneIndex, moveTab, close, togglePinned, toggleSftp, setSftpPosition, closeOthers, closeRight, closeAll, openSplit, closeSplit, setViewCount, closePane, isVisible, canUseViewCount, cycle, removeConnection, restore }
 })

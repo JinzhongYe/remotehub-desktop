@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
+import { defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Connection } from '../../shared/types'
 import { useConnectionStore } from '../stores/connection'
 import { clampSplitRatio, useWorkspaceStore, type WorkspaceViewCount } from '../stores/workspace'
@@ -8,6 +8,7 @@ import SerialTerminalPane from './SerialTerminalPane.vue'
 import SftpPane from './SftpPane.vue'
 import SplitPane from './SplitPane.vue'
 import { t } from '../i18n'
+import { tabDragScroll, tabWheelDelta } from '../tab-navigation'
 import ConnectionIcon from './ConnectionIcon.vue'
 import UiIcon from './UiIcon.vue'
 import appIcon from '../../../assets/remotehub.png'
@@ -19,6 +20,11 @@ const workspace = useWorkspaceStore()
 const connections = useConnectionStore()
 const databaseConnected = ref<Record<string, boolean>>({})
 const workspaceContent = ref<HTMLElement | null>(null)
+const tabStrip = ref<HTMLElement | null>(null)
+const draggingTabId = ref('')
+const tabDrop = ref<{ id: string; after: boolean } | null>(null)
+let dragScrollFrame: number | undefined
+let dragClientX = 0
 const workspaceSplitX = ref(50)
 const workspaceSplitY = ref(50)
 let workspaceDrag: 'x' | 'y' | null = null
@@ -26,11 +32,82 @@ let workspaceDrag: 'x' | 'y' | null = null
 onMounted(() => {
   window.addEventListener('keydown', handleShortcut)
   document.addEventListener('pointerdown', closeOpenMenus)
+  void nextTick(revealActiveTab)
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleShortcut)
   document.removeEventListener('pointerdown', closeOpenMenus)
+  finishTabDrag()
 })
+
+watch(() => workspace.activeId, () => { void nextTick(revealActiveTab) })
+
+function revealActiveTab(): void {
+  const tab = Array.from(tabStrip.value?.querySelectorAll<HTMLElement>('[data-tab-id]') || []).find((item) => item.dataset.tabId === workspace.activeId)
+  tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+
+function scrollTabs(event: WheelEvent): void {
+  const strip = tabStrip.value
+  if (!strip || strip.scrollWidth <= strip.clientWidth) return
+  const delta = tabWheelDelta(event, strip.clientWidth)
+  if (!delta) return
+  event.preventDefault()
+  strip.scrollLeft += delta
+}
+
+function startTabDrag(event: DragEvent, id: string): void {
+  if (!workspace.tabs.some((tab) => tab.id === id && tab.closable) || !event.dataTransfer) { event.preventDefault(); return }
+  draggingTabId.value = id
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('application/x-remotehub-workspace-tab', id)
+}
+
+function scrollDuringDrag(): void {
+  dragScrollFrame = undefined
+  if (!draggingTabId.value || !tabStrip.value) return
+  const bounds = tabStrip.value.getBoundingClientRect()
+  const speed = tabDragScroll(dragClientX, bounds.left, bounds.right)
+  if (speed) {
+    tabStrip.value.scrollLeft += speed
+    dragScrollFrame = window.requestAnimationFrame(scrollDuringDrag)
+  }
+}
+
+function dragOverStrip(event: DragEvent): void {
+  if (!draggingTabId.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dragClientX = event.clientX
+  if (dragScrollFrame === undefined) dragScrollFrame = window.requestAnimationFrame(scrollDuringDrag)
+}
+
+function dragOverTab(event: DragEvent, id: string): void {
+  if (!draggingTabId.value) return
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  tabDrop.value = { id, after: event.clientX >= bounds.left + bounds.width / 2 }
+}
+
+function dropTab(event: DragEvent, targetId?: string): void {
+  if (!draggingTabId.value) return
+  event.preventDefault()
+  const target = targetId || workspace.tabs.at(-1)?.id
+  if (target) workspace.moveTab(draggingTabId.value, target, targetId ? tabDrop.value?.id === targetId && tabDrop.value.after : true)
+  finishTabDrag()
+}
+
+function finishTabDrag(): void {
+  draggingTabId.value = ''
+  tabDrop.value = null
+  if (dragScrollFrame !== undefined) window.cancelAnimationFrame(dragScrollFrame)
+  dragScrollFrame = undefined
+}
+
+function panePosition(id: string): { gridColumn: number; gridRow: number } | undefined {
+  if (workspace.viewCount === 1) return undefined
+  const index = workspace.paneIndex(id)
+  return { gridColumn: index % 2 + 1, gridRow: Math.floor(index / 2) + 1 }
+}
 
 function closeOpenMenus(event: PointerEvent): void {
   document.querySelectorAll<HTMLDetailsElement>('.tab-menu[open], .sftp-layout-menu[open]').forEach((menu) => {
@@ -115,8 +192,8 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
 <template>
   <section class="workspace-shell">
     <div class="tab-bar">
-      <div class="tab-strip" role="tablist">
-        <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryId === tab.id }" role="tab" :title="tab.title" :aria-label="tab.title" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)">
+      <div ref="tabStrip" class="tab-strip" role="tablist" @wheel="scrollTabs" @dragover="dragOverStrip" @drop="dropTab($event)">
+        <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id), dragging: draggingTabId === tab.id, 'drop-before': tabDrop?.id === tab.id && !tabDrop.after, 'drop-after': tabDrop?.id === tab.id && tabDrop.after }" role="tab" :data-tab-id="tab.id" :draggable="tab.closable" :title="tab.title" :aria-label="tab.title" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)" @dragstart="startTabDrag($event, tab.id)" @dragover="dragOverTab($event, tab.id)" @drop.stop="dropTab($event, tab.id)" @dragend="finishTabDrag">
           <span class="tab-icon"><UiIcon :name="iconFor(tab.type)" /></span><span v-if="databaseConnected[tab.id]" class="status-dot" :title="t('connected')"></span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')"><UiIcon name="pin" :size="12" /></span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)"><UiIcon name="close" :size="14" /></button>
         </div>
         <button class="new-tab" :title="`${t('newTab')} (${shortcutModifier} T)`" :aria-label="t('newTab')" :disabled="!workspace.activeTab?.connectionId" @click="openActiveAgain"><UiIcon name="plus" /></button>
@@ -156,8 +233,8 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
         </div>
       </div>
       <template v-for="tab in workspace.tabs" :key="tab.id">
-        <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ primary: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id) }">
-          <div v-if="workspace.viewCount > 1" class="split-pane-heading"><span :title="tab.title">{{ tab.title }}</span><small v-if="workspace.activeId === tab.id">{{ t('primaryView') }}</small><button v-else :aria-label="t('closeView')" @click="workspace.closePane(tab.id)"><UiIcon name="close" /></button></div>
+        <div v-if="tab.connectionId" v-show="workspace.isVisible(tab.id)" class="workspace-pane-slot" :class="{ focused: workspace.activeId === tab.id }" :style="panePosition(tab.id)" :data-pane-tab="tab.id" @pointerdown.capture="workspace.focusPane(tab.id)" @focusin.capture="workspace.focusPane(tab.id)">
+          <div v-if="workspace.viewCount > 1" class="split-pane-heading"><select class="pane-connection-picker" :value="tab.id" :title="tab.title" :aria-label="t('selectViewConnection')" @change="workspace.showInPane(tab.id, ($event.target as HTMLSelectElement).value)"><option v-for="option in workspace.tabs.filter(item => item.closable)" :key="option.id" :value="option.id">{{ option.title }}</option></select><small v-if="workspace.activeId === tab.id">{{ t('focusedView') }}</small><button :title="t('closeView')" :aria-label="t('closeView')" @click.stop="workspace.closePane(tab.id)"><UiIcon name="close" /></button></div>
           <div class="workspace-pane-body">
             <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="[`sftp-${tab.sftpPosition ?? 'bottom'}`, { 'second-collapsed': tab.sftpOpen === false }]" :direction="tab.sftpPosition === 'left' || tab.sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="tab.sftpPosition === 'left' || tab.sftpPosition === 'top'" :initial="60">
               <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="tab.sftpOpen !== false" @toggle-sftp="workspace.toggleSftp(tab.id)" /></template>
