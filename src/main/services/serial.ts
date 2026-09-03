@@ -82,15 +82,14 @@ export class SerialService {
           if (!settled) fail(new Error('Serial connection was canceled'))
           return
         }
+        settled = true
         try { this.storage.markConnected(connection.id, Date.now()) } catch { /* metadata is best effort */ }
         this.emitStatus({ sessionId, status: 'connected' })
         const initialInput = connection.initialCommand || ''
-        const ready = Promise.resolve().then(() => initialInput ? this.write(sessionId, initialInput) : undefined)
-        void ready.then(() => {
-          if (settled) return
-          settled = true
-          resolve({ sessionId })
-        }, fail)
+        // Queue startup bytes before renderer input, but never wait for CTS/XON or a
+        // slow device to drain before returning the session needed for disconnect.
+        if (initialInput) void Promise.resolve().then(() => this.write(sessionId, initialInput)).catch(fail)
+        resolve({ sessionId })
       })
     })
   }

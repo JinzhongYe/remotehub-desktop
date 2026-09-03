@@ -76,9 +76,19 @@ describe('serial settings', () => {
     expect(ports[0].writes).toHaveLength(0)
   })
   it('reports initialization write failures and releases the device', async () => {
-    const { service, connection, ports, FakePort } = fixture()
+    const { service, connection, ports, FakePort, sink } = fixture()
     vi.spyOn(FakePort.prototype, 'write').mockImplementation((_data, callback) => { callback(new Error('device write failed')); return false })
-    await expect(service.connect({ ...connection, initialCommand: 'startup' })).rejects.toThrow('device write failed')
+    const { sessionId } = await service.connect({ ...connection, initialCommand: 'startup' })
+    await vi.waitFor(() => expect(ports[0].isOpen).toBe(false))
+    expect(sink).toHaveBeenCalledWith('serial:status', expect.objectContaining({ sessionId, status: 'error', message: 'device write failed' }))
+  })
+  it('returns a usable session even while hardware flow control blocks initialization drain', async () => {
+    const { service, connection, ports, FakePort } = fixture()
+    vi.spyOn(FakePort.prototype, 'drain').mockImplementation(() => {})
+    const { sessionId } = await service.connect({ ...connection, initialCommand: 'startup\n', serialOptions: { ...DEFAULT_SERIAL_OPTIONS, flowControl: 'hardware' } })
+    expect(ports[0].writes[0].toString()).toBe('startup\r')
+    expect(ports[0].isOpen).toBe(true)
+    service.disconnect(sessionId)
     expect(ports[0].isOpen).toBe(false)
   })
   it.each(['utf8', 'gbk', 'gb18030', 'big5'] as const)('decodes %s across packet boundaries and encodes outgoing text', async encoding => {
