@@ -5,6 +5,8 @@ import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { Connection, ConnectionInput, ConnectionOrderItem, Group } from '../../../shared/types'
 import type Database from 'better-sqlite3'
+import { normalizeSerialOptions } from '../../../shared/serial'
+import { CONNECTION_COLORS, MAX_INITIAL_COMMAND_LENGTH, MAX_NOTES_LENGTH } from '../../../shared/terminal-input'
 
 type BetterSqlite3 = typeof import('better-sqlite3')
 const loadNativeModule = createRequire(__filename)
@@ -12,6 +14,10 @@ const loadNativeModule = createRequire(__filename)
 type ConnectionRow = {
   id: string
   name: string
+  notes: string | null
+  color: string | null
+  initial_command: string | null
+  serial_options: string | null
   type: string
   host: string
   port: number
@@ -84,6 +90,10 @@ export class StorageService {
       ensureColumn(db, 'connections', 'database_ssl_mode', 'TEXT')
       ensureColumn(db, 'connections', 'ssh_tunnel_id', 'TEXT')
       migrateConnectionTypes(db)
+      ensureColumn(db, 'connections', 'notes', 'TEXT')
+      ensureColumn(db, 'connections', 'color', 'TEXT')
+      ensureColumn(db, 'connections', 'initial_command', 'TEXT')
+      ensureColumn(db, 'connections', 'serial_options', 'TEXT')
       this.db = db
     } catch {
       // Native modules can be unavailable immediately after a dependency install.
@@ -128,12 +138,16 @@ export class StorageService {
     }
     this.db.prepare(`
       INSERT INTO connections (
-        id, name, type, host, port, username, auth_type, database_type,
+        id, name, notes, color, initial_command, serial_options, type, host, port, username, auth_type, database_type,
         database_name, database_ssl_mode, ssh_tunnel_id, credential_id, host_key_fingerprint, group_id, favorite, sort_order, last_connected_at, created_at, updated_at
-      ) VALUES (@id, @name, @type, @host, @port, @username, @authType, @databaseType,
+      ) VALUES (@id, @name, @notes, @color, @initialCommand, @serialOptions, @type, @host, @port, @username, @authType, @databaseType,
         @database, @databaseSslMode, @sshTunnelId, @credentialId, @hostKeyFingerprint, @groupId, @favorite, @sortOrder, @lastConnectedAt, @createdAt, @updatedAt)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
+        notes = excluded.notes,
+        color = excluded.color,
+        initial_command = excluded.initial_command,
+        serial_options = excluded.serial_options,
         type = excluded.type,
         host = excluded.host,
         port = excluded.port,
@@ -149,7 +163,7 @@ export class StorageService {
         favorite = excluded.favorite,
         sort_order = excluded.sort_order,
         updated_at = excluded.updated_at
-    `).run({ ...connection, favorite: connection.favorite ? 1 : 0, authType: connection.authType || null, databaseType: connection.databaseType || null, database: connection.database || null, databaseSslMode: connection.databaseSslMode || null, sshTunnelId: connection.sshTunnelId || null, credentialId: connection.credentialId || null, hostKeyFingerprint: connection.hostKeyFingerprint || null, groupId: connection.groupId || null, lastConnectedAt: connection.lastConnectedAt || null })
+    `).run({ ...connection, notes: connection.notes || null, color: connection.color || null, initialCommand: connection.initialCommand || null, serialOptions: connection.serialOptions ? JSON.stringify(connection.serialOptions) : null, favorite: connection.favorite ? 1 : 0, authType: connection.authType || null, databaseType: connection.databaseType || null, database: connection.database || null, databaseSslMode: connection.databaseSslMode || null, sshTunnelId: connection.sshTunnelId || null, credentialId: connection.credentialId || null, hostKeyFingerprint: connection.hostKeyFingerprint || null, groupId: connection.groupId || null, lastConnectedAt: connection.lastConnectedAt || null })
     return connection
   }
 
@@ -295,8 +309,17 @@ function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'c
   if (input.type !== 'shell' && (!Number.isInteger(port) || port < 1 || port > maximumPort)) throw appError('INVALID_PORT', input.type === 'serial' ? '波特率必须是1到4000000之间的整数' : '端口必须是1到65535之间的整数')
   if (input.type === 'shell' && (!isAbsolute(host) || host.length > 4096)) throw appError('SHELL_DIRECTORY_INVALID', 'Shell working directory is invalid')
   const type = input.type
+  const notes = metadataText(input.notes, MAX_NOTES_LENGTH, 'notes')
+  const initialCommand = type === 'shell' || type === 'serial' ? metadataText(input.initialCommand, MAX_INITIAL_COMMAND_LENGTH, 'initial command') : undefined
+  if (input.color && !CONNECTION_COLORS.includes(input.color)) throw appError('INVALID_COLOR', 'Connection color is invalid')
+  let serialOptions: Connection['serialOptions']
+  try { if (type === 'serial') serialOptions = normalizeSerialOptions(input.serialOptions) } catch { throw appError('SERIAL_OPTIONS_INVALID', 'Serial settings are invalid') }
   return {
     name: name.slice(0, 120),
+    notes,
+    color: input.color || undefined,
+    initialCommand,
+    serialOptions,
     type,
     host: host.slice(0, type === 'shell' ? 4096 : 255),
     port: type === 'shell' ? 1 : port,
@@ -317,6 +340,10 @@ function toConnection(row: ConnectionRow): Connection {
   return {
     id: row.id,
     name: row.name,
+    notes: row.notes || undefined,
+    color: row.color || undefined,
+    initialCommand: row.initial_command || undefined,
+    serialOptions: row.type === 'serial' ? normalizeSerialOptions(row.serial_options ? JSON.parse(row.serial_options) : undefined) : undefined,
     type: row.type as Connection['type'],
     host: row.host,
     port: row.port,
@@ -335,6 +362,12 @@ function toConnection(row: ConnectionRow): Connection {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
+}
+
+function metadataText(value: unknown, limit: number, label: string): string | undefined {
+  if (value === undefined || value === '') return undefined
+  if (typeof value !== 'string' || value.length > limit || value.includes('\0')) throw appError('INVALID_CONNECTION_METADATA', `Invalid ${label} (maximum ${limit} characters)`)
+  return value
 }
 
 function ensureColumn(db: Database.Database, table: string, column: string, definition: string): void {

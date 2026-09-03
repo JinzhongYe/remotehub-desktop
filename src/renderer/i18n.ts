@@ -47,7 +47,12 @@ const localBrowserMessages = {
   en: { localComputer: 'This computer', localDesktop: 'Desktop', localDocuments: 'Documents', localDownloads: 'Downloads' }
 } as const
 
-type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en | keyof typeof databaseUiMessages.en | keyof typeof connectionUiMessages.en | keyof typeof localBrowserMessages.en
+const assetSettingsMessages = {
+  'zh-CN': { notes: '备注', notesPlaceholder: '用途、环境或其他说明（支持多行）', colorLabel: '颜色标签', noColor: '无颜色标签', initialCommand: '初始执行命令', initialCommandPlaceholder: '按原样输入；需要执行的行请手动换行', initialCommandHint: '仅在新建会话或重连时输入，不自动补回车；末尾未换行则等待手动执行。内容随连接明文保存及导出，请勿填写密码。', dataBits: '数据位', stopBits: '停止位', parity: '校验位', parityNone: '无校验 (None)', parityEven: '偶校验 (Even)', parityOdd: '奇校验 (Odd)', characterEncoding: '字符编码', serialAdvanced: '高级串口设置', flowControl: '流控制', flowNone: '无流控制', serialLineEnding: '发送换行符' },
+  en: { notes: 'Notes', notesPlaceholder: 'Purpose, environment, or other notes (multiple lines)', colorLabel: 'Color label', noColor: 'No color label', initialCommand: 'Initial commands', initialCommandPlaceholder: 'Input is sent as written; add a newline to execute a line', initialCommandHint: 'Sent only on a new session or reconnect. No Enter is appended. Stored and exported as plain text; do not include passwords.', dataBits: 'Data bits', stopBits: 'Stop bits', parity: 'Parity', parityNone: 'None', parityEven: 'Even', parityOdd: 'Odd', characterEncoding: 'Character encoding', serialAdvanced: 'Advanced serial settings', flowControl: 'Flow control', flowNone: 'None', serialLineEnding: 'Send line ending' }
+} as const
+
+type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en | keyof typeof databaseUiMessages.en | keyof typeof connectionUiMessages.en | keyof typeof localBrowserMessages.en | keyof typeof assetSettingsMessages.en
 
 const stored = localStorage.getItem('remotehub.locale')
 export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
@@ -60,7 +65,8 @@ export function t(key: MessageKey, values: Record<string, string | number> = {})
   const connectionUi = connectionUiMessages[locale.value] as Record<string, string>
   const defaults = messages[locale.value] as Record<string, string>
   const localBrowser = localBrowserMessages[locale.value] as Record<string, string>
-  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), localBrowser[key] || connectionUi[key] || databaseUi[key] || cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
+  const assetSettings = assetSettingsMessages[locale.value] as Record<string, string>
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), assetSettings[key] || localBrowser[key] || connectionUi[key] || databaseUi[key] || cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
 }
 
 export function toggleLocale(): void {

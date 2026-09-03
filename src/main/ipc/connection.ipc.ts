@@ -6,7 +6,7 @@ import type { Connection, ConnectionOrderItem, ConnectionSaveRequest, Connection
 import { CredentialService } from '../services/credentials'
 import { appError, StorageService } from '../services/storage'
 
-export function registerConnectionIpc(storage: StorageService, credentials: CredentialService, testSerial?: (path: string, baudRate: number) => Promise<ConnectionTestResult>, testDatabase?: (connection: Connection, credential?: string) => Promise<ConnectionTestResult>): void {
+export function registerConnectionIpc(storage: StorageService, credentials: CredentialService, testSerial?: (connection: Connection) => Promise<ConnectionTestResult>, testDatabase?: (connection: Connection, credential?: string) => Promise<ConnectionTestResult>): void {
   ipcMain.handle('connections:list', () => ({ connections: storage.listConnections(), groups: storage.listGroups() }))
   ipcMain.handle('connections:save', (_event, request: ConnectionSaveRequest) => {
     if (!request || typeof request !== 'object' || !request.connection || typeof request.connection !== 'object') throw appError('INVALID_CONNECTION', 'Connection input is invalid')
@@ -70,7 +70,7 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     const result = connection.type === 'shell'
       ? await testLocalDirectory(connection.host)
       : connection.type === 'serial' && testSerial
-      ? await testSerial(connection.host, connection.port)
+      ? await testSerial(connection)
       : connection.type === 'database' && testDatabase
         ? await testDatabase(connection, request?.credential)
         : await testTcpConnection(connection.host, connection.port)

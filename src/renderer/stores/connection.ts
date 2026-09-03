@@ -12,7 +12,7 @@ export const useConnectionStore = defineStore('connections', () => {
   const filteredConnections = computed(() => {
     const query = search.value.trim().toLocaleLowerCase()
     if (!query) return connections.value
-    return connections.value.filter((item) => [item.name, item.host, item.database, item.databaseType].filter(Boolean).join(' ').toLocaleLowerCase().includes(query))
+    return connections.value.filter((item) => [item.name, item.host, item.database, item.databaseType, item.notes].filter(Boolean).join(' ').toLocaleLowerCase().includes(query))
   })
   const selected = computed(() => connections.value.find((item) => item.id === selectedId.value) || null)
 

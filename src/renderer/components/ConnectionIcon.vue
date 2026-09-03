@@ -12,7 +12,7 @@ const connectionGlyph = computed(() => props.connection.type === 'shell' ? 'comm
 </script>
 
 <template>
-  <span class="connection-icon" :class="connection.type" aria-hidden="true">
+  <span class="connection-icon" :class="connection.type" :title="connection.notes" :style="connection.color ? { borderColor: connection.color, boxShadow: `inset 3px 0 0 ${connection.color}` } : undefined" aria-hidden="true">
     <img v-if="connection.type === 'database'" :src="databaseIcon" alt="">
     <UiIcon v-else :name="connectionGlyph" :size="15" />
   </span>

@@ -2,6 +2,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { Connection, ConnectionInput, Group } from '../../shared/types'
 import type { SerialPortInfo } from '../../shared/serial'
+import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, SERIAL_ENCODINGS } from '../../shared/serial'
+import { CONNECTION_COLORS, MAX_INITIAL_COMMAND_LENGTH, MAX_NOTES_LENGTH } from '../../shared/terminal-input'
 import { localShellName } from '../../shared/local-shell'
 import { privateKeyFileName } from '../../shared/private-key'
 import { t } from '../i18n'
@@ -12,6 +14,7 @@ const shellTypeName = computed(() => localShellName(props.platform || ''))
 
 const form = reactive<ConnectionInput>({ name: '', type: 'ssh', host: '', port: 22, username: '', authType: 'privateKey', databaseType: 'mysql', database: '', databaseSslMode: 'disable', favorite: false })
 const credential = ref('')
+const serialOptions = reactive({ ...DEFAULT_SERIAL_OPTIONS })
 const clearCredential = ref(false)
 const privateKeyPath = ref('')
 const serialPorts = ref<SerialPortInfo[]>([])
@@ -25,6 +28,10 @@ watch(() => [props.open, props.connection], () => {
   const item = props.connection
   form.id = item?.id
   form.name = item?.name || ''
+  form.notes = item?.notes || ''
+  form.color = item?.color
+  form.initialCommand = item?.initialCommand || ''
+  Object.assign(serialOptions, DEFAULT_SERIAL_OPTIONS, item?.serialOptions)
   form.type = item?.type || 'ssh'
   form.host = item?.host || ''
   form.port = item?.port || (form.type === 'database' ? 3306 : form.type === 'ftp' ? 21 : form.type === 'serial' ? 115200 : form.type === 'shell' ? 1 : 22)
@@ -51,7 +58,7 @@ function submit(): void {
 }
 
 function connectionInput(): ConnectionInput {
-  return { ...form, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim(), authType: form.type === 'shell' || form.type === 'serial' || (form.type === 'database' && form.databaseType === 'sqlite') ? undefined : form.type === 'database' ? 'password' : form.authType }
+  return { ...form, serialOptions: form.type === 'serial' ? { ...serialOptions } : undefined, initialCommand: form.type === 'shell' || form.type === 'serial' ? form.initialCommand : undefined, name: form.name.trim(), host: form.host.trim(), username: form.username?.trim(), authType: form.type === 'shell' || form.type === 'serial' || (form.type === 'database' && form.databaseType === 'sqlite') ? undefined : form.type === 'database' ? 'password' : form.authType }
 }
 
 async function testConnection(): Promise<void> {
@@ -137,10 +144,19 @@ async function chooseShellDirectory(): Promise<void> {
         <button type="button" class="icon-button" :aria-label="t('cancel')" @click="emit('close')">×</button>
       </div>
       <div class="dialog-grid">
+        <div class="field wide"><span>{{ t('colorLabel') }}</span><div class="connection-colors"><button v-for="color in CONNECTION_COLORS" :key="color" type="button" :style="{ backgroundColor: color }" :class="{ selected: form.color === color }" :aria-label="`${t('colorLabel')} ${color}`" :aria-pressed="form.color === color" @click="form.color = color"></button><button type="button" class="clear-color" :title="t('noColor')" :aria-label="t('noColor')" :aria-pressed="!form.color" @click="form.color = undefined">×</button></div></div>
         <label class="field wide"><span>{{ t('name') }}</span><input v-model="form.name" required placeholder="dev-server / MES PG"></label>
         <label class="field"><span>{{ t('type') }}</span><select v-model="form.type" @change="changeType"><option value="ssh">SSH Server</option><option value="ftp">FTP Server</option><option value="database">Database</option><option value="serial">Serial / 串口</option><option value="shell">{{ shellTypeName }}</option></select></label>
-        <label v-if="form.type !== 'shell' && (form.databaseType !== 'sqlite' || form.type !== 'database')" class="field"><span>{{ form.type === 'serial' ? t('baudRate') : t('port') }}</span><input v-model.number="form.port" type="number" min="1" :max="form.type === 'serial' ? 4000000 : 65535" required></label>
+        <label v-if="form.type !== 'shell' && (form.databaseType !== 'sqlite' || form.type !== 'database')" class="field"><span>{{ form.type === 'serial' ? t('baudRate') : t('port') }}</span><input v-model.number="form.port" type="number" min="1" :max="form.type === 'serial' ? 4000000 : 65535" :list="form.type === 'serial' ? 'serial-baud-rates' : undefined" required><datalist v-if="form.type === 'serial'" id="serial-baud-rates"><option v-for="rate in SERIAL_BAUD_RATES" :key="rate" :value="rate"></option></datalist></label>
         <label class="field wide"><span>{{ form.type === 'shell' ? t('workingDirectory') : form.type === 'serial' ? t('serialPath') : form.type === 'database' && form.databaseType === 'sqlite' ? t('databaseFile') : t('host') }}</span><span v-if="form.type === 'shell'" class="input-with-action"><input v-model="form.host" required placeholder="C:\Projects / /home/user/Projects"><button type="button" class="button secondary" @click="chooseShellDirectory">{{ t('chooseFolder') }}</button></span><span v-else-if="form.type === 'serial'" class="input-with-action"><input v-model="form.host" required list="serial-port-list" placeholder="COM3 / /dev/ttyUSB0"><button type="button" class="button secondary" @click="loadSerialPorts">{{ t('refresh') }}</button></span><span v-else-if="form.type === 'database' && form.databaseType === 'sqlite'" class="input-with-action"><input v-model="form.host" required placeholder="/data/app.db"><button type="button" class="button secondary" @click="chooseDatabaseFile">{{ t('chooseFile') }}</button></span><input v-else v-model="form.host" required placeholder="192.168.1.100 / db.example.com"><datalist id="serial-port-list"><option v-for="item in serialPorts" :key="item.path" :value="item.path">{{ item.manufacturer }}</option></datalist><small v-if="form.type === 'serial' && serialPortsError" class="field-error">{{ serialPortsError }}</small></label>
+        <template v-if="form.type === 'serial'">
+          <label class="field"><span>{{ t('dataBits') }}</span><select v-model.number="serialOptions.dataBits"><option v-for="bits in [5, 6, 7, 8]" :key="bits" :value="bits">{{ bits }}</option></select></label>
+          <label class="field"><span>{{ t('stopBits') }}</span><select v-model.number="serialOptions.stopBits"><option v-for="bits in [1, 1.5, 2]" :key="bits" :value="bits">{{ bits }}</option></select></label>
+          <label class="field"><span>{{ t('parity') }}</span><select v-model="serialOptions.parity"><option value="none">{{ t('parityNone') }}</option><option value="even">{{ t('parityEven') }}</option><option value="odd">{{ t('parityOdd') }}</option><option value="mark">Mark (1)</option><option value="space">Space (0)</option></select></label>
+          <label class="field"><span>{{ t('characterEncoding') }}</span><select v-model="serialOptions.encoding"><option v-for="encoding in SERIAL_ENCODINGS" :key="encoding" :value="encoding">{{ encoding === 'utf8' ? 'UTF-8' : encoding.toUpperCase() }}</option></select></label>
+          <details class="serial-advanced field wide"><summary>{{ t('serialAdvanced') }}</summary><div class="dialog-grid"><label class="field"><span>{{ t('flowControl') }}</span><select v-model="serialOptions.flowControl"><option value="none">{{ t('flowNone') }}</option><option value="hardware">RTS / CTS</option><option value="software">XON / XOFF</option></select></label><label class="field"><span>{{ t('serialLineEnding') }}</span><select v-model="serialOptions.lineEnding"><option value="cr">CR</option><option value="lf">LF</option><option value="crlf">CRLF</option></select></label></div></details>
+        </template>
+        <label v-if="form.type === 'shell' || form.type === 'serial'" class="field wide"><span>{{ t('initialCommand') }}</span><textarea v-model="form.initialCommand" name="initialCommand" rows="4" :maxlength="MAX_INITIAL_COMMAND_LENGTH" spellcheck="false" :placeholder="t('initialCommandPlaceholder')"></textarea><small>{{ t('initialCommandHint') }}</small></label>
         <template v-if="form.type !== 'serial' && form.type !== 'shell'">
           <label v-if="form.type !== 'database' || form.databaseType !== 'sqlite'" class="field"><span>{{ t('username') }}</span><input v-model="form.username" :required="form.type === 'database'" :placeholder="form.type === 'database' ? 'root / app_user' : t('optional')"></label>
           <label v-if="form.type === 'ssh'" class="field"><span>{{ t('authType') }}</span><select v-model="form.authType"><option value="privateKey">Private Key</option><option value="password">{{ t('passwordVault') }}</option></select></label>
@@ -154,6 +170,7 @@ async function chooseShellDirectory(): Promise<void> {
         <label class="field"><span>{{ t('group') }}</span><select v-model="form.groupId"><option :value="undefined">{{ t('noGroup') }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></label>
         <label v-if="form.type !== 'serial' && form.type !== 'shell' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="field wide"><span>{{ form.authType === 'privateKey' ? t('privateKey') : t('credential') }}</span><template v-if="form.authType === 'privateKey'"><span class="private-key-picker"><button type="button" class="button secondary" @click="choosePrivateKey">{{ t('choosePrivateKey') }}</button><small :title="privateKeyPath">{{ privateKeyPath ? privateKeyFileName(privateKeyPath) : t('noFileSelected') }}</small></span><textarea v-model="credential" rows="4" autocomplete="off" :disabled="Boolean(privateKeyPath)" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('privateKeyPlaceholder')"></textarea><button v-if="privateKeyPath" type="button" class="text-button align-start" @click="privateKeyPath = ''">{{ t('pasteInstead') }}</button></template><input v-else v-model="credential" type="password" autocomplete="new-password" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('newCredentialPlaceholder')"></label>
       </div>
+      <label class="field connection-notes"><span>{{ t('notes') }}</span><textarea v-model="form.notes" name="notes" rows="3" :maxlength="MAX_NOTES_LENGTH" :placeholder="t('notesPlaceholder')"></textarea></label>
       <label class="favorite-check"><input v-model="form.favorite" type="checkbox"><span>{{ t('favorite') }}</span></label>
       <label v-if="connection?.credentialId && form.type !== 'serial' && form.type !== 'shell' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="favorite-check"><input v-model="clearCredential" type="checkbox"><span>{{ t('clearCredential') }}</span></label>
       <p v-if="form.type !== 'serial' && form.type !== 'shell' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="dialog-note">{{ t('credentialNote') }}</p>

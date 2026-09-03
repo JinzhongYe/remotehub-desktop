@@ -351,6 +351,15 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; }
 .field.wide { grid-column: span 2; }
+.connection-colors { display: flex; gap: 10px; align-items: center; padding: 6px 2px; }
+.connection-colors button { width: 16px; height: 16px; border: 0; border-radius: 50%; padding: 0; cursor: pointer; }
+.connection-colors button.selected, .connection-colors button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.connection-colors .clear-color { color: var(--muted); background: transparent; font-size: 20px; line-height: 16px; }
+.connection-notes { margin-top: 12px; }
+.serial-advanced { padding: 10px; border: 1px solid var(--line); border-radius: 5px; }
+.serial-advanced summary { cursor: pointer; color: var(--blue); }
+.serial-advanced[open] > .dialog-grid { margin-top: 10px; }
+.field > small { line-height: 1.5; }
 .field input, .field select, .field textarea { width: 100%; padding: 8px; border: 1px solid #344252; border-radius: 4px; outline: 0; color: var(--text); background: #0f151c; font-size: 11px; }
 .field textarea { min-height: 78px; resize: vertical; font-family: "JetBrains Mono", "Noto Sans SC", serif; line-height: 1.35; }
 .sftp-editor { display: flex; width: min(900px, calc(100vw - 32px)); height: min(700px, calc(100vh - 32px)); flex-direction: column; }

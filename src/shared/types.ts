@@ -1,3 +1,5 @@
+import type { SerialOptions } from './serial'
+
 export type ConnectionType = 'ssh' | 'ftp' | 'database' | 'serial' | 'shell'
 export type DatabaseType = 'mysql' | 'postgres' | 'sqlite'
 export type DatabaseSslMode = 'disable' | 'require' | 'verify-full'
@@ -6,6 +8,10 @@ export type AuthType = 'password' | 'privateKey'
 export interface Connection {
   id: string
   name: string
+  notes?: string
+  color?: string
+  initialCommand?: string
+  serialOptions?: SerialOptions
   type: ConnectionType
   host: string
   port: number
@@ -28,6 +34,10 @@ export interface Connection {
 export interface ConnectionInput {
   id?: string
   name: string
+  notes?: string
+  color?: string
+  initialCommand?: string
+  serialOptions?: SerialOptions
   type: ConnectionType
   host: string
   port: number

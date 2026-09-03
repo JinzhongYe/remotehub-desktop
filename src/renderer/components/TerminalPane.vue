@@ -8,6 +8,7 @@ import { withoutAnsiBackgrounds } from '../../shared/ansi'
 import type { ServerStatus, SshDataEvent, SshSessionStatus, SshStatusEvent } from '../../shared/ssh'
 import { t } from '../i18n'
 import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
+import { terminalClipboardKeyHandler } from '../terminal-clipboard'
 import UiIcon from './UiIcon.vue'
 
 const props = defineProps<{ connectionId: string; active: boolean; local?: boolean; sftpOpen?: boolean }>()
@@ -312,11 +313,14 @@ async function copySelection(): Promise<void> {
 
 async function pasteClipboard(): Promise<void> {
   contextMenu.value = null
-  if (!sessionId) return
+  const current = sessionId
+  const target = terminal
+  if (!current || !target || status.value !== 'connected') return
   try {
     const text = await window.api.app.readText()
-    if (text) await (props.local ? window.api.shell.write(sessionId, text) : window.api.ssh.write(sessionId, text))
-    terminal?.focus()
+    if (disposed || sessionId !== current || status.value !== 'connected') return
+    if (text) target.paste(text)
+    target.focus()
   } catch (error) {
     statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
   }
@@ -356,6 +360,7 @@ onMounted(async () => {
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
+  terminal.attachCustomKeyEventHandler(terminalClipboardKeyHandler(() => terminal?.hasSelection() ?? false, () => { void copySelection() }, () => { void pasteClipboard() }))
   themeObserver = new MutationObserver(() => { if (terminal) { terminal.options.theme = terminalTheme(); terminal.options.minimumContrastRatio = terminalContrastRatio() } })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   terminalLayout = observeTerminalLayout(terminalHost.value, terminal, fitAddon, () => {

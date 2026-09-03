@@ -1,4 +1,5 @@
 import type { Connection, ConnectionInput, ConnectionTestResult, Group } from './types'
+import { normalizeSerialOptions } from './serial'
 
 export interface ConnectionExport {
   version: 1
@@ -10,7 +11,7 @@ export function createConnectionExport(connections: Connection[], groups: Group[
   return {
     version: 1,
     groups: groups.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })),
-    connections: connections.map(({ id, name, type, host, port, username, authType, databaseType, database, databaseSslMode, sshTunnelId, groupId, favorite, sortOrder }) => ({ id, name, type, host, port, username, authType, databaseType, database, databaseSslMode, sshTunnelId, groupId, favorite, sortOrder }))
+    connections: connections.map(({ id, name, notes, color, initialCommand, serialOptions, type, host, port, username, authType, databaseType, database, databaseSslMode, sshTunnelId, groupId, favorite, sortOrder }) => ({ id, name, notes, color, initialCommand, serialOptions, type, host, port, username, authType, databaseType, database, databaseSslMode, sshTunnelId, groupId, favorite, sortOrder }))
   }
 }
 
@@ -30,6 +31,10 @@ export function parseConnectionExport(text: string): ConnectionExport {
       return {
         id: item.id,
         name: String(item.name || ''),
+        notes: metadataString(item.notes),
+        color: metadataString(item.color),
+        initialCommand: metadataString(item.initialCommand),
+        serialOptions: item.type === 'serial' ? normalizeSerialOptions(item.serialOptions as ConnectionInput['serialOptions']) : undefined,
         type: item.type as ConnectionInput['type'],
         host: String(item.host || ''),
         port: Number(item.port),
@@ -54,6 +59,11 @@ function record(value: unknown): Record<string, unknown> {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined
+}
+
+function metadataString(value: unknown): string | undefined {
+  if (value !== undefined && typeof value !== 'string') throw new Error('Connection metadata must be text')
+  return value as string | undefined
 }
 
 export function connectionErrorCode(code?: string): ConnectionTestResult['code'] {

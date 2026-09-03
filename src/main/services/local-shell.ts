@@ -6,6 +6,7 @@ import { spawn, type IPty } from 'node-pty'
 import type { CodexStatus } from '../../shared/codex'
 import type { LocalShellDataEvent, LocalShellStatusEvent } from '../../shared/local-shell'
 import { localShellCommand } from '../../shared/local-shell'
+import { initialTerminalInput } from '../../shared/terminal-input'
 import type { Connection } from '../../shared/types'
 import { appError, type StorageService } from './storage'
 import { queryCodexUsage } from './codex'
@@ -34,8 +35,11 @@ export class LocalShellService {
       child.onExit(() => this.closeSession(sessionId, true))
       try { this.storage.markConnected(connection.id, Date.now()) } catch { /* metadata is best effort */ }
       this.emitStatus({ sessionId, status: 'connected' })
+      const initialInput = initialTerminalInput(connection.initialCommand)
+      if (initialInput) child.write(initialInput)
       return Promise.resolve({ sessionId })
     } catch (error) {
+      this.closeSession(sessionId, false)
       const message = error instanceof Error ? error.message : 'Local shell could not start'
       this.emitStatus({ sessionId, status: 'error', message })
       return Promise.reject(appError('SHELL_START_FAILED', message))

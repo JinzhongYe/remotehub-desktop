@@ -88,7 +88,7 @@ app.whenReady().then(async () => {
   database = new DatabaseService(storage, credentials)
   localShell = new LocalShellService(storage, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   registerAppIpc()
-  registerConnectionIpc(storage, credentials, (path, baudRate) => serial!.test(path, baudRate), (connection, credential) => database!.test(connection, credential))
+  registerConnectionIpc(storage, credentials, (connection) => serial!.test(connection), (connection, credential) => database!.test(connection, credential))
   registerSshIpc(storage, ssh)
   registerSftpIpc(storage, sftp)
   registerFtpIpc(storage, ftp)
