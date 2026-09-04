@@ -78,6 +78,7 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     return result
   })
   ipcMain.handle('groups:save', (_event, name: string, id?: string) => storage.saveGroup(name, id))
+  ipcMain.handle('groups:reorder', (_event, ids: string[]) => storage.reorderGroups(ids))
   ipcMain.handle('groups:delete', (_event, id: string) => {
     storage.deleteGroup(id)
     return { ok: true }

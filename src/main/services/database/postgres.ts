@@ -5,7 +5,8 @@ import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQue
 import { databaseStatement, isPageableStatement, normalizeQueryRequest } from '../../../shared/database'
 import type { Connection, DatabaseSslMode } from '../../../shared/types'
 import { fingerprintHostKey } from '../host-key'
-import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseTunnel } from './adapter'
+import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseStatusEvent, DatabaseTunnel } from './adapter'
+import { DatabaseLifecycle } from './lifecycle'
 import { serializeDatabaseValue } from './mysql'
 
 const QUERY_TIMEOUT_MS = 30_000
@@ -41,8 +42,14 @@ export class PostgresAdapter implements DatabaseAdapter {
   readonly type = 'postgres' as const
   private cursorSql = ''
   private cursorOpen = false
+  private readonly lifecycle = new DatabaseLifecycle()
+  private closed = false
 
-  constructor(private client: Client, public database: string, public readonly serverVersion: string, private tunnel?: TunnelHandle, private readonly reconnect?: (database: string) => Promise<PostgresHandle>) {}
+  constructor(private client: Client, public database: string, public readonly serverVersion: string, private tunnel?: TunnelHandle, private readonly reconnect?: (database: string) => Promise<PostgresHandle>) {
+    this.watchClient(client)
+  }
+
+  onStatus(listener: (event: DatabaseStatusEvent) => void): () => void { return this.lifecycle.subscribe(listener) }
 
   async ping(): Promise<void> {
     try { await this.client.query('SELECT 1') } catch (error) { throw mapPostgresError(error) }
@@ -63,12 +70,18 @@ export class PostgresAdapter implements DatabaseAdapter {
     try {
       await this.closeCursor()
       const next = await this.reconnect(name)
+      if (this.closed) {
+        void next.client.end().finally(() => next.tunnel?.close()).catch(() => undefined)
+        throw databaseError('DATABASE_SESSION_NOT_FOUND', 'Database session is closed')
+      }
       const previousClient = this.client
       const previousTunnel = this.tunnel
       this.client = next.client
       this.tunnel = next.tunnel
       this.database = next.database
-      void previousClient.end().finally(() => previousTunnel?.close())
+      this.watchClient(next.client)
+      this.lifecycle.connected()
+      void previousClient.end().finally(() => previousTunnel?.close()).catch(() => undefined)
     } catch (error) { throw mapPostgresError(error) }
   }
 
@@ -156,7 +169,23 @@ export class PostgresAdapter implements DatabaseAdapter {
   }
 
   close(): void {
-    void this.closeCursor().finally(() => this.client.end()).finally(() => this.tunnel?.close())
+    if (this.closed) return
+    this.closed = true
+    const client = this.client
+    const tunnel = this.tunnel
+    this.lifecycle.closed()
+    void this.closeCursor().finally(() => client.end()).finally(() => tunnel?.close()).catch(() => undefined)
+  }
+
+  private watchClient(client: Client): void {
+    // Keep an error listener on retired clients until they finish shutting down.
+    // Their late events must neither escape uncaught nor close the replacement.
+    client.on?.('error', (error: Error) => {
+      if (!this.closed && this.client === client) this.lifecycle.failed(mapPostgresError(error).message)
+    })
+    client.on?.('end', () => {
+      if (!this.closed && this.client === client) this.lifecycle.ended()
+    })
   }
 
   private async openCursor(sql: string): Promise<void> {

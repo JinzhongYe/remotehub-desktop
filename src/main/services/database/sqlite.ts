@@ -3,7 +3,8 @@ import { createRequire } from 'node:module'
 import type Database from 'better-sqlite3'
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseResultColumn, DatabaseTable } from '../../../shared/database'
 import { databaseStatement, isPageableStatement, normalizeQueryRequest } from '../../../shared/database'
-import type { DatabaseAdapter, DatabaseAdapterFactory } from './adapter'
+import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseStatusEvent } from './adapter'
+import { DatabaseLifecycle } from './lifecycle'
 import { buildPagedMysqlQuery, serializeDatabaseValue } from './mysql'
 
 type BetterSqlite3 = typeof import('better-sqlite3')
@@ -25,18 +26,22 @@ export const sqliteAdapterFactory: DatabaseAdapterFactory = {
 export class SqliteAdapter implements DatabaseAdapter {
   readonly type = 'sqlite' as const
   database = 'main'
+  private readonly lifecycle = new DatabaseLifecycle()
+  private closed = false
 
   constructor(private readonly client: Database.Database, public readonly serverVersion: string) {}
 
+  onStatus(listener: (event: DatabaseStatusEvent) => void): () => void { return this.lifecycle.subscribe(listener) }
+
   async ping(): Promise<void> {
-    try { this.client.prepare('SELECT 1').get() } catch (error) { throw mapSqliteError(error) }
+    try { this.client.prepare('SELECT 1').get() } catch (error) { throw this.operationError(error) }
   }
 
   async listDatabases(): Promise<DatabaseCatalog[]> {
     try {
       const rows = this.client.pragma('database_list') as { name: string }[]
       return rows.map(({ name }) => ({ name, system: name === 'temp' }))
-    } catch (error) { throw mapSqliteError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   async useDatabase(database: string): Promise<void> {
@@ -51,7 +56,7 @@ export class SqliteAdapter implements DatabaseAdapter {
       const rows = this.client.prepare(`SELECT name, type FROM ${quoteIdentifier(name)}.sqlite_schema
         WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name`).all() as { name: string; type: string }[]
       return rows.map((row) => ({ database: name, name: row.name, type: row.type === 'view' ? 'view' : 'table' }))
-    } catch (error) { throw mapSqliteError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   async listColumns(database: string, table: string): Promise<DatabaseColumn[]> {
@@ -73,7 +78,7 @@ export class SqliteAdapter implements DatabaseAdapter {
         defaultValue: serializeDatabaseValue(row.dflt_value),
         length: Number(row.type.match(/\((\d+)/)?.[1]) || undefined
       }))
-    } catch (error) { throw mapSqliteError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   async query(input: DatabaseQueryRequest): Promise<DatabaseQueryResult> {
@@ -102,11 +107,20 @@ export class SqliteAdapter implements DatabaseAdapter {
         kind: 'rows', columns, rows, page: pageable ? request.page : 0, pageSize: request.pageSize, hasMore,
         affectedRows: 0, changedRows: 0, warningStatus: 0, durationMs: Date.now() - startedAt, statement: statementName
       }
-    } catch (error) { throw mapSqliteError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   close(): void {
+    if (this.closed) return
     this.client.close()
+    this.closed = true
+    this.lifecycle.closed()
+  }
+
+  private operationError(error: unknown): Error & { code: string } {
+    // SQLite has no network transport: only a closed native handle ends a session.
+    if (this.client.open === false) this.lifecycle.ended()
+    return mapSqliteError(error)
   }
 }
 

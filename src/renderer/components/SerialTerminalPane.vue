@@ -4,10 +4,12 @@ import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 import type { SerialDataEvent, SerialSessionStatus, SerialStatusEvent } from '../../shared/serial'
+import type { TabConnectionStatus } from '../../shared/connection-status'
 import { t } from '../i18n'
 import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
 
 const props = defineProps<{ connectionId: string; active: boolean }>()
+const emit = defineEmits<{ 'connection-status': [status: TabConnectionStatus] }>()
 const terminalHost = ref<HTMLElement | null>(null)
 const status = ref<SerialSessionStatus>('connecting')
 const statusMessage = ref('')
@@ -21,6 +23,8 @@ let removeInputListener: (() => void) | undefined
 let terminalLayout: ReturnType<typeof observeTerminalLayout> | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SerialStatusEvent>()
+
+watch(status, (value) => emit('connection-status', value), { immediate: true, flush: 'sync' })
 
 function statusLabel(): string {
   return status.value === 'connecting' ? t('connecting') : status.value === 'connected' ? t('connected') : status.value === 'closed' ? t('closed') : t('serialUnavailable')
@@ -57,6 +61,7 @@ async function connect(): Promise<void> {
       return
     }
     sessionId = result.sessionId
+    status.value = 'connected'
     for (const data of pendingData.get(sessionId) || []) terminal?.write(data)
     const previousStatus = pendingStatus.get(sessionId)
     if (previousStatus) {
@@ -105,6 +110,7 @@ watch(() => props.active, (active) => { if (active) void nextTick(fit) })
 
 onBeforeUnmount(() => {
   disposed = true
+  status.value = 'closed'
   removeDataListener?.()
   removeStatusListener?.()
   removeInputListener?.()

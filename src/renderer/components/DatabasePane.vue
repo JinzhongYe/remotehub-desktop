@@ -5,12 +5,13 @@ import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { DatabaseCatalog, DatabaseCell, DatabaseColumn, DatabaseQueryResult, DatabaseTable } from '../../shared/database'
+import { createSessionStatusTracker, type TabConnectionStatus } from '../../shared/connection-status'
 import { DATABASE_PAGE_SIZE, databaseCellDetail, databaseDisplayRows, databaseSqlLiteral, parseDatabaseCsv } from '../../shared/database'
 import { t } from '../i18n'
 import { useConnectionStore } from '../stores/connection'
 
 const props = defineProps<{ connectionId: string }>()
-const emit = defineEmits<{ connectionStatus: [connected: boolean] }>()
+const emit = defineEmits<{ 'connection-status': [status: TabConnectionStatus] }>()
 const connections = useConnectionStore()
 const connection = computed(() => connections.connections.find((item) => item.id === props.connectionId))
 const isPostgres = computed(() => connection.value?.databaseType === 'postgres')
@@ -64,6 +65,15 @@ let editor: EditorView | undefined
 const editorTheme = new Compartment()
 let themeObserver: MutationObserver | undefined
 let disposed = false
+let removeStatusListener: (() => void) | undefined
+let connectionStatus: TabConnectionStatus = 'connecting'
+const statusTracker = createSessionStatusTracker((status, message) => {
+  connectionStatus = status
+  emit('connection-status', status)
+  if (message) errorMessage.value = message
+  if (status === 'error' || status === 'closed') sessionId.value = ''
+})
+statusTracker.start()
 let columnResize: { key: string; startX: number; startWidth: number } | null = null
 
 function databaseEditorTheme() {
@@ -127,13 +137,14 @@ watch(result, () => {
   cellContextMenu.value = null
   selectedCell.value = null
 })
-watch(sessionId, (value) => emit('connectionStatus', Boolean(value)), { immediate: true })
 
 async function connect(): Promise<void> {
   connecting.value = true
   errorMessage.value = ''
-  if (sessionId.value) await window.api.database.disconnect(sessionId.value).catch(() => undefined)
+  const previousSession = sessionId.value
   sessionId.value = ''
+  statusTracker.start()
+  if (previousSession) await window.api.database.disconnect(previousSession).catch(() => undefined)
   try {
     const connected = await window.api.database.connect(props.connectionId)
     if (disposed) {
@@ -141,12 +152,17 @@ async function connect(): Promise<void> {
       return
     }
     sessionId.value = connected.sessionId
+    statusTracker.bind(connected.sessionId)
+    if (!sessionId.value) return
     databases.value = await window.api.database.listDatabases(connected.sessionId)
     selectedDatabase.value = connected.database && visibleDatabases.value.some((item) => item.name === connected.database)
       ? connected.database
       : visibleDatabases.value[0]?.name || ''
     if (selectedDatabase.value) await changeDatabase()
-  } catch (error) { showError(error) } finally { connecting.value = false }
+  } catch (error) {
+    if (!disposed && connectionStatus === 'connecting') statusTracker.finish('error')
+    showError(error)
+  } finally { connecting.value = false }
 }
 
 async function changeDatabase(): Promise<void> {
@@ -655,8 +671,10 @@ async function exportResult(): Promise<void> {
 }
 
 onMounted(async () => {
+  removeStatusListener = window.api.database.onStatus(statusTracker.handle)
   document.addEventListener('pointerdown', closeContextMenus)
   await nextTick()
+  if (disposed) return
   if (editorHost.value) editor = new EditorView({
     parent: editorHost.value,
     doc: isSqlite.value ? 'SELECT sqlite_version() AS version;' : 'SELECT VERSION() AS version;',
@@ -669,11 +687,13 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disposed = true
-  emit('connectionStatus', false)
+  const currentSession = sessionId.value
+  statusTracker.finish('closed')
+  removeStatusListener?.()
   document.removeEventListener('pointerdown', closeContextMenus)
   themeObserver?.disconnect()
   editor?.destroy()
-  if (sessionId.value) void window.api.database.disconnect(sessionId.value).catch(() => undefined)
+  if (currentSession) void window.api.database.disconnect(currentSession).catch(() => undefined)
 })
 </script>
 

@@ -8,6 +8,10 @@ export const useConnectionStore = defineStore('connections', () => {
   const selectedId = ref<string | null>(null)
   const search = ref('')
   const loading = ref(false)
+  let groupMutationQueue = Promise.resolve()
+  let pendingGroupMoves = 0
+  let groupMoveRevision = 0
+  let confirmedGroupOrder: string[] = []
 
   const filteredConnections = computed(() => {
     const query = search.value.trim().toLocaleLowerCase()
@@ -81,16 +85,66 @@ export const useConnectionStore = defineStore('connections', () => {
   }
 
   async function saveGroup(name: string, id?: string): Promise<void> {
-    const group = await window.api.groups.save(name, id)
-    const index = groups.value.findIndex((item) => item.id === group.id)
-    if (index >= 0) groups.value[index] = group
-    else groups.value.push(group)
+    await queueGroupMutation(async () => {
+      const group = await window.api.groups.save(name, id)
+      const index = groups.value.findIndex((item) => item.id === group.id)
+      if (index >= 0) groups.value[index] = { ...group, sortOrder: groups.value[index].sortOrder }
+      else groups.value.push(group)
+    })
   }
 
   async function deleteGroup(id: string): Promise<void> {
-    await window.api.groups.delete(id)
-    groups.value = groups.value.filter((item) => item.id !== id)
-    connections.value.forEach((item) => { if (item.groupId === id) item.groupId = undefined })
+    await queueGroupMutation(async () => {
+      await window.api.groups.delete(id)
+      groups.value = groups.value.filter((item) => item.id !== id)
+      connections.value.forEach((item) => { if (item.groupId === id) item.groupId = undefined })
+    })
+  }
+
+  function queueGroupMutation(operation: () => Promise<void>): Promise<void> {
+    const result = groupMutationQueue.then(operation)
+    groupMutationQueue = result.catch(() => undefined)
+    return result
+  }
+
+  function orderedGroups(ids: string[]): Group[] {
+    const byId = new Map(groups.value.map((group) => [group.id, group]))
+    const ordered: Group[] = []
+    for (const id of ids) {
+      const group = byId.get(id)
+      if (group) { ordered.push(group); byId.delete(id) }
+    }
+    return [...ordered, ...byId.values()].map((group, sortOrder) => ({ ...group, sortOrder }))
+  }
+
+  async function moveGroup(id: string, targetId: string, after = false): Promise<void> {
+    if (id === targetId || !groups.value.some((group) => group.id === targetId)) return
+    const items = [...groups.value]
+    const index = items.findIndex((group) => group.id === id)
+    if (index < 0) return
+    const [item] = items.splice(index, 1)
+    const targetIndex = items.findIndex((group) => group.id === targetId)
+    items.splice(targetIndex + (after ? 1 : 0), 0, item)
+    if (items.every((group, position) => group.id === groups.value[position].id)) return
+
+    if (!pendingGroupMoves) confirmedGroupOrder = groups.value.map((group) => group.id)
+    const revision = ++groupMoveRevision
+    const requestedOrder = items.map((group) => group.id)
+    pendingGroupMoves++
+    groups.value = orderedGroups(requestedOrder)
+    await queueGroupMutation(async () => {
+      try {
+        // Reconcile queued creates/deletes, and never let an older response erase a newer drag.
+        const result: Group[] = await window.api.groups.reorder(orderedGroups(requestedOrder).map((group) => group.id))
+        confirmedGroupOrder = result.map((group) => group.id)
+        if (revision === groupMoveRevision) groups.value = orderedGroups(confirmedGroupOrder)
+      } catch (error) {
+        if (revision === groupMoveRevision) groups.value = orderedGroups(confirmedGroupOrder)
+        throw error
+      } finally {
+        pendingGroupMoves--
+      }
+    })
   }
 
   async function remove(id: string): Promise<void> {
@@ -103,5 +157,5 @@ export const useConnectionStore = defineStore('connections', () => {
     selectedId.value = id
   }
 
-  return { connections, groups, selectedId, search, loading, filteredConnections, selected, load, save, remove, duplicate, importConnections, exportConnections, move, test, saveGroup, deleteGroup, select }
+  return { connections, groups, selectedId, search, loading, filteredConnections, selected, load, save, remove, duplicate, importConnections, exportConnections, move, moveGroup, test, saveGroup, deleteGroup, select }
 })

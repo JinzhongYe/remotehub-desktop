@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestRequest } from '../shared/types'
 import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
 import type { SftpTransferEvent } from '../shared/sftp'
+import type { SessionConnectionStatusEvent } from '../shared/connection-status'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
 import type { DatabaseCsvExport, DatabaseQueryRequest } from '../shared/database'
 import type { LocalShellDataEvent, LocalShellStatusEvent } from '../shared/local-shell'
@@ -25,6 +26,11 @@ function remoteFiles(prefix: 'sftp' | 'ftp') {
     retryTransfer: (sessionId: string, transferId: string) => ipcRenderer.invoke(`${prefix}:retryTransfer`, sessionId, transferId),
     clearFinishedTransfers: (sessionId: string) => ipcRenderer.invoke(`${prefix}:clearFinishedTransfers`, sessionId),
     disconnect: (sessionId: string) => ipcRenderer.invoke(`${prefix}:disconnect`, sessionId),
+    onStatus: (listener: (event: SessionConnectionStatusEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SessionConnectionStatusEvent): void => listener(payload)
+      ipcRenderer.on(`${prefix}:status`, handler)
+      return () => ipcRenderer.removeListener(`${prefix}:status`, handler)
+    },
     onTransfer: (listener: (event: SftpTransferEvent) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: SftpTransferEvent): void => listener(payload)
       ipcRenderer.on(`${prefix}:transfer`, handler)
@@ -137,10 +143,16 @@ const api = {
     listColumns: (sessionId: string, name: string, table: string) => ipcRenderer.invoke('database:listColumns', sessionId, name, table),
     query: (sessionId: string, request: DatabaseQueryRequest) => ipcRenderer.invoke('database:query', sessionId, request),
     exportCsv: (request: DatabaseCsvExport) => ipcRenderer.invoke('database:exportCsv', request),
-    disconnect: (sessionId: string) => ipcRenderer.invoke('database:disconnect', sessionId)
+    disconnect: (sessionId: string) => ipcRenderer.invoke('database:disconnect', sessionId),
+    onStatus: (listener: (event: SessionConnectionStatusEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SessionConnectionStatusEvent): void => listener(payload)
+      ipcRenderer.on('database:status', handler)
+      return () => ipcRenderer.removeListener('database:status', handler)
+    }
   },
   groups: {
     save: (name: string, id?: string) => ipcRenderer.invoke('groups:save', name, id),
+    reorder: (ids: string[]) => ipcRenderer.invoke('groups:reorder', ids),
     delete: (id: string) => ipcRenderer.invoke('groups:delete', id)
   }
 }

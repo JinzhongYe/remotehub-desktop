@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SftpEntry, SftpQueueResult, SftpTransferItem, SftpTransferStatus } from '../../shared/sftp'
+import { createSessionStatusTracker, type TabConnectionStatus } from '../../shared/connection-status'
 import { joinRemotePath, parentRemotePath, selectSftpPaths, transferProgress } from '../../shared/sftp'
 import { LOCAL_COMPUTER_ROOT, localNavigationTarget, localTransferDirectory, type LocalEntry } from '../../shared/local-files'
 import { t } from '../i18n'
@@ -12,11 +13,12 @@ import UiIcon from './UiIcon.vue'
 type SftpPosition = 'right' | 'left' | 'top' | 'bottom'
 
 const props = defineProps<{ connectionId: string; embedded?: boolean; position?: SftpPosition; protocol?: 'sftp' | 'ftp' }>()
-const emit = defineEmits<{ position: [position: SftpPosition] }>()
+const emit = defineEmits<{ position: [position: SftpPosition]; 'connection-status': [status: TabConnectionStatus] }>()
 const protocolName = computed(() => props.protocol === 'ftp' ? 'FTP' : 'SFTP')
 const remoteApi = computed(() => props.protocol === 'ftp' ? window.api.ftp : window.api.sftp)
 
 const sessionId = ref('')
+const connectionStatus = ref<TabConnectionStatus>('connecting')
 const path = ref('/')
 const pathInput = ref('/')
 const entries = ref<SftpEntry[]>([])
@@ -42,11 +44,20 @@ const editorSaving = ref(false)
 const creatingDirectory = ref(false)
 const directoryName = ref('')
 let removeTransferListener: (() => void) | undefined
+let removeStatusListener: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 let localSelectionAnchor = ''
 let remoteSelectionAnchor = ''
 let localRequestId = 0
+
+const statusTracker = createSessionStatusTracker((status, message) => {
+  connectionStatus.value = status
+  emit('connection-status', status)
+  if (message) errorMessage.value = message
+  if (status === 'error' || status === 'closed') sessionId.value = ''
+})
+statusTracker.start()
 
 const activeTransfers = computed(() => transfers.value.filter((item) => item.status === 'running' || item.status === 'queued' || item.status === 'paused'))
 const finishedTransfers = computed(() => transfers.value.filter((item) => item.status === 'completed' || item.status === 'error' || item.status === 'cancelled'))
@@ -97,15 +108,19 @@ async function connect(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   pendingFingerprint.value = ''
-  if (sessionId.value) await remoteApi.value.disconnect(sessionId.value).catch(() => undefined)
+  const previousSession = sessionId.value
   sessionId.value = ''
+  statusTracker.start()
+  if (previousSession) await remoteApi.value.disconnect(previousSession).catch(() => undefined)
   transfers.value = []
   selectedRemotePaths.value = []
   remoteSelectionAnchor = ''
   try {
     const result = await remoteApi.value.connect(props.connectionId)
     if (result.trustRequired) {
+      if (disposed) return
       pendingFingerprint.value = result.fingerprint
+      statusTracker.finish('error')
       return
     }
     if (disposed) {
@@ -113,11 +128,14 @@ async function connect(): Promise<void> {
       return
     }
     sessionId.value = result.sessionId
+    statusTracker.bind(result.sessionId)
+    if (!sessionId.value) return
     path.value = result.homePath
     pathInput.value = result.homePath
     transfers.value = await remoteApi.value.listTransfers(result.sessionId)
     await refresh()
   } catch (error) {
+    if (!disposed && connectionStatus.value === 'connecting') statusTracker.finish('error')
     errorMessage.value = error instanceof Error ? error.message : t('sftpUnavailable')
   } finally {
     loading.value = false
@@ -130,6 +148,7 @@ async function trustHostKey(): Promise<void> {
     await window.api.sftp.trustHostKey(props.connectionId, pendingFingerprint.value)
     await connect()
   } catch (error) {
+    statusTracker.finish('error')
     errorMessage.value = error instanceof Error ? error.message : t('sftpUnavailable')
   }
 }
@@ -427,6 +446,7 @@ function canCancel(item: SftpTransferItem): boolean {
 
 onMounted(() => {
   removeTransferListener = remoteApi.value.onTransfer(transferEvent)
+  removeStatusListener = remoteApi.value.onStatus(statusTracker.handle)
   document.addEventListener('pointerdown', closeEntryMenu)
   void refreshLocal()
   void connect()
@@ -434,10 +454,13 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposed = true
+  const currentSession = sessionId.value
+  statusTracker.finish('closed')
   if (refreshTimer) clearTimeout(refreshTimer)
   removeTransferListener?.()
+  removeStatusListener?.()
   document.removeEventListener('pointerdown', closeEntryMenu)
-  if (sessionId.value) void remoteApi.value.disconnect(sessionId.value).catch(() => undefined)
+  if (currentSession) void remoteApi.value.disconnect(currentSession).catch(() => undefined)
 })
 
 function closeEntryMenu(): void {
@@ -450,9 +473,10 @@ function closeEntryMenu(): void {
     <div class="sftp-toolbar" role="toolbar" :aria-label="protocolName">
       <div class="sftp-toolbar-heading">
         <span class="terminal-kind" :class="{ 'ftp-kind': props.protocol === 'ftp' }"><UiIcon name="transfer" :size="13" /><b>{{ protocolName }}</b></span>
-        <span><strong>{{ t('remoteFiles') }}</strong><small :class="{ error: errorMessage }">{{ errorMessage ? t('failed') : sessionId ? t('connected') : t('connecting') }}</small></span>
+        <span><strong>{{ t('remoteFiles') }}</strong><small :class="{ error: connectionStatus === 'error' }">{{ t(connectionStatus === 'error' ? 'failed' : connectionStatus) }}</small></span>
       </div>
       <div class="sftp-toolbar-actions">
+        <button v-if="!pendingFingerprint && (connectionStatus === 'closed' || connectionStatus === 'error')" class="toolbar-button" @click="connect"><UiIcon name="refresh" /> {{ t('reconnect') }}</button>
         <button class="toolbar-button primary-transfer" :disabled="!sessionId" @click="chooseUploadFiles"><UiIcon name="upload" /> <span>{{ t('upload') }}</span></button>
         <button class="toolbar-button" :disabled="!sessionId" @click="chooseUploadFolder"><UiIcon name="folderUpload" /> <span>{{ t('uploadFolder') }}</span></button>
         <button class="toolbar-button" :disabled="!sessionId" @click="createDirectory"><UiIcon name="folderPlus" /> <span>{{ t('newFolder') }}</span></button>
@@ -463,7 +487,7 @@ function closeEntryMenu(): void {
       </div>
     </div>
     <div v-if="pendingFingerprint" class="terminal-host-key"><span>{{ t('hostKeyPrompt') }}</span><code>{{ t('hostKeyFingerprint') }}: {{ pendingFingerprint }}</code><button class="toolbar-button" @click="trustHostKey">{{ t('trustHostKey') }}</button></div>
-    <div v-if="errorMessage" class="sftp-error"><span>{{ errorMessage }}</span><button class="icon-button" :aria-label="t('cancel')" @click="errorMessage = ''"><UiIcon name="close" /></button><button v-if="!sessionId" class="toolbar-button" @click="connect"><UiIcon name="refresh" /> {{ t('reconnect') }}</button></div>
+    <div v-if="errorMessage" class="sftp-error"><span>{{ errorMessage }}</span><button class="icon-button" :aria-label="t('cancel')" @click="errorMessage = ''"><UiIcon name="close" /></button></div>
     <SplitPane class="sftp-file-split" :direction="position === 'left' || position === 'right' ? 'vertical' : 'horizontal'">
       <template #first><section class="sftp-browser local-browser" @dragover.prevent @drop.stop="dropOnLocal">
         <div class="sftp-browser-title"><span class="sftp-browser-mark" aria-hidden="true"><UiIcon name="drive" /></span><strong>{{ t('localFiles') }}</strong><span class="sftp-entry-count">{{ localEntries.length }}</span><button class="text-button" @click="chooseLocalDirectory">{{ t('chooseFolder') }}</button></div>

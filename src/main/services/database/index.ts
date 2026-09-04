@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseConnectResult, DatabaseQueryRequest, DatabaseQueryResult, DatabaseCatalog, DatabaseTable, DatabaseColumn } from '../../../shared/database'
 import type { Connection, ConnectionTestResult } from '../../../shared/types'
+import type { SessionConnectionStatusEvent } from '../../../shared/connection-status'
 import { CredentialService } from '../credentials'
 import { appError, StorageService } from '../storage'
 import type { DatabaseAdapter, DatabaseAdapterFactory } from './adapter'
@@ -8,7 +9,7 @@ import { mapMysqlError, mysqlAdapterFactory } from './mysql'
 import { mapPostgresError, postgresAdapterFactory } from './postgres'
 import { mapSqliteError, sqliteAdapterFactory } from './sqlite'
 
-type DatabaseSession = { id: string; connectionId: string; adapter: DatabaseAdapter; busy: boolean }
+type DatabaseSession = { id: string; connectionId: string; adapter: DatabaseAdapter; busy: boolean; unsubscribe?: () => void }
 
 export class DatabaseService {
   private readonly sessions = new Map<string, DatabaseSession>()
@@ -18,7 +19,8 @@ export class DatabaseService {
     private readonly credentials: CredentialService,
     private readonly mysqlFactory: DatabaseAdapterFactory = mysqlAdapterFactory,
     private readonly postgresFactory: DatabaseAdapterFactory = postgresAdapterFactory,
-    private readonly sqliteFactory: DatabaseAdapterFactory = sqliteAdapterFactory
+    private readonly sqliteFactory: DatabaseAdapterFactory = sqliteAdapterFactory,
+    private readonly onStatus?: (event: SessionConnectionStatusEvent) => void
   ) {}
 
   async connect(connection: Connection): Promise<DatabaseConnectResult> {
@@ -26,7 +28,23 @@ export class DatabaseService {
     const adapter = await this.connectAdapter(connection)
     const sessionId = randomUUID()
     try { this.storage.markConnected(connection.id, Date.now()) } catch (error) { adapter.close(); throw error }
-    this.sessions.set(sessionId, { id: sessionId, connectionId: connection.id, adapter, busy: false })
+    const session: DatabaseSession = { id: sessionId, connectionId: connection.id, adapter, busy: false }
+    this.sessions.set(sessionId, session)
+    if (adapter.onStatus) {
+      const unsubscribe = adapter.onStatus((event) => {
+        if (this.sessions.get(sessionId) !== session) return
+        if (event.status === 'error' || event.status === 'closed') {
+          this.sessions.delete(sessionId)
+          session.unsubscribe?.()
+          // Tear down the transport/tunnel without overwriting the terminal reason.
+          try { adapter.close() } catch { /* the terminated session is already removed */ }
+        }
+        this.notifyStatus({ sessionId, ...event })
+      })
+      // A retained terminal event may be replayed before subscribe returns.
+      if (this.sessions.get(sessionId) === session) session.unsubscribe = unsubscribe
+      else unsubscribe()
+    } else this.notifyStatus({ sessionId, status: 'connected' })
     return { sessionId, adapter: adapter.type, database: adapter.database, serverVersion: adapter.serverVersion }
   }
 
@@ -79,11 +97,16 @@ export class DatabaseService {
     const session = this.sessions.get(sessionId)
     if (!session) return
     this.sessions.delete(sessionId)
-    session.adapter.close()
+    session.unsubscribe?.()
+    try { session.adapter.close() } finally { this.notifyStatus({ sessionId, status: 'closed' }) }
   }
 
   dispose(): void {
     for (const sessionId of [...this.sessions.keys()]) this.disconnect(sessionId)
+  }
+
+  private notifyStatus(event: SessionConnectionStatusEvent): void {
+    try { this.onStatus?.(event) } catch { /* renderer may already be destroyed */ }
   }
 
   private getSession(sessionId: string): DatabaseSession {

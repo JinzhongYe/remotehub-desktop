@@ -85,7 +85,7 @@ app.whenReady().then(async () => {
   sftp = new SftpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   ftp = new FtpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   serial = new SerialService(storage, (channel, payload) => mainWindow?.webContents.send(channel, payload))
-  database = new DatabaseService(storage, credentials)
+  database = new DatabaseService(storage, credentials, undefined, undefined, undefined, (event) => mainWindow?.webContents.send('database:status', event))
   localShell = new LocalShellService(storage, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   registerAppIpc()
   registerConnectionIpc(storage, credentials, (connection) => serial!.test(connection), (connection, credential) => database!.test(connection, credential))

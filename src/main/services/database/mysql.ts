@@ -1,7 +1,8 @@
 import { createConnection, type Connection as MysqlConnection, type FieldPacket, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise'
 import type { DatabaseCatalog, DatabaseCell, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseResultColumn, DatabaseTable } from '../../../shared/database'
 import { databaseStatement, isPageableStatement, normalizeQueryRequest } from '../../../shared/database'
-import type { DatabaseAdapter, DatabaseAdapterFactory } from './adapter'
+import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseStatusEvent } from './adapter'
+import { DatabaseLifecycle } from './lifecycle'
 
 const SYSTEM_DATABASES = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
 const QUERY_TIMEOUT_MS = 30_000
@@ -37,18 +38,25 @@ export const mysqlAdapterFactory: DatabaseAdapterFactory = {
 
 export class MysqlAdapter implements DatabaseAdapter {
   readonly type = 'mysql' as const
+  private readonly lifecycle = new DatabaseLifecycle()
+  private closed = false
 
-  constructor(private readonly client: MysqlConnection, public database: string | undefined, public readonly serverVersion: string) {}
+  constructor(private readonly client: MysqlConnection, public database: string | undefined, public readonly serverVersion: string) {
+    client.on('error', (error: Error) => { if (!this.closed) this.operationError(error) })
+    client.on('end', () => { if (!this.closed) this.lifecycle.ended() })
+  }
+
+  onStatus(listener: (event: DatabaseStatusEvent) => void): () => void { return this.lifecycle.subscribe(listener) }
 
   async ping(): Promise<void> {
-    try { await this.client.ping() } catch (error) { throw mapMysqlError(error) }
+    try { await this.client.ping() } catch (error) { throw this.operationError(error) }
   }
 
   async listDatabases(): Promise<DatabaseCatalog[]> {
     try {
       const [rows] = await this.client.query({ sql: 'SHOW DATABASES', rowsAsArray: true, timeout: QUERY_TIMEOUT_MS })
       return asRows(rows).map((row) => String(row[0])).filter(Boolean).map((name) => ({ name, system: SYSTEM_DATABASES.has(name.toLocaleLowerCase()) }))
-    } catch (error) { throw mapMysqlError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   async useDatabase(database: string): Promise<void> {
@@ -56,7 +64,7 @@ export class MysqlAdapter implements DatabaseAdapter {
     try {
       await this.client.changeUser({ database: name })
       this.database = name
-    } catch (error) { throw mapMysqlError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   async listTables(database: string): Promise<DatabaseTable[]> {
@@ -76,7 +84,7 @@ export class MysqlAdapter implements DatabaseAdapter {
         type: String(row[1]).toUpperCase() === 'VIEW' ? 'view' : 'table',
         estimatedRows: row[2] == null ? undefined : safeNumber(row[2])
       }))
-    } catch (error) { throw mapMysqlError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   async listColumns(database: string, table: string): Promise<DatabaseColumn[]> {
@@ -107,7 +115,7 @@ export class MysqlAdapter implements DatabaseAdapter {
         scale: row[9] == null ? undefined : safeNumber(row[9]),
         comment: row[10] ? String(row[10]) : undefined
       }))
-    } catch (error) { throw mapMysqlError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   async query(input: DatabaseQueryRequest): Promise<DatabaseQueryResult> {
@@ -151,11 +159,23 @@ export class MysqlAdapter implements DatabaseAdapter {
         durationMs: Date.now() - startedAt,
         statement
       }
-    } catch (error) { throw mapMysqlError(error) }
+    } catch (error) { throw this.operationError(error) }
   }
 
   close(): void {
-    this.client.destroy()
+    if (this.closed) return
+    this.closed = true
+    try { this.client.destroy() } finally { this.lifecycle.closed() }
+  }
+
+  private operationError(error: unknown): Error & { code: string } {
+    const source = error as { fatal?: boolean; code?: string }
+    const mapped = mapMysqlError(error)
+    // mysql2 can deliver a fatal socket failure only through the active query.
+    if (!this.closed && (source?.fatal || ['PROTOCOL_CONNECTION_LOST', 'ECONNRESET', 'EPIPE', 'ECONNABORTED'].includes(source?.code || ''))) {
+      this.lifecycle.failed(mapped.message)
+    }
+    return mapped
   }
 }
 

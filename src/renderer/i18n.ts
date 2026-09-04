@@ -52,7 +52,12 @@ const assetSettingsMessages = {
   en: { notes: 'Notes', notesPlaceholder: 'Purpose, environment, or other notes (multiple lines)', colorLabel: 'Color label', noColor: 'No color label', initialCommand: 'Initial commands', initialCommandPlaceholder: 'Input is sent as written; add a newline to execute a line', initialCommandHint: 'Sent only on a new session or reconnect. No Enter is appended. Stored and exported as plain text; do not include passwords.', dataBits: 'Data bits', stopBits: 'Stop bits', parity: 'Parity', parityNone: 'None', parityEven: 'Even', parityOdd: 'Odd', characterEncoding: 'Character encoding', serialAdvanced: 'Advanced serial settings', flowControl: 'Flow control', flowNone: 'None', serialLineEnding: 'Send line ending' }
 } as const
 
-type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en | keyof typeof databaseUiMessages.en | keyof typeof connectionUiMessages.en | keyof typeof localBrowserMessages.en | keyof typeof assetSettingsMessages.en
+const workspaceStateMessages = {
+  'zh-CN': { connectionFailed: '连接失败', dragGroup: '按住左键拖动分组排序；Alt + 上下方向键也可移动' },
+  en: { connectionFailed: 'Connection failed', dragGroup: 'Drag to reorder groups, or press Alt + Up / Down' }
+} as const
+
+type MessageKey = keyof typeof messages.en | keyof typeof phase6Messages.en | keyof typeof multiViewMessages.en | keyof typeof cellDataMessages.en | keyof typeof databaseUiMessages.en | keyof typeof connectionUiMessages.en | keyof typeof localBrowserMessages.en | keyof typeof assetSettingsMessages.en | keyof typeof workspaceStateMessages.en
 
 const stored = localStorage.getItem('remotehub.locale')
 export const locale = ref<Locale>(stored === 'en' || stored === 'zh-CN' ? stored : navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
@@ -66,7 +71,8 @@ export function t(key: MessageKey, values: Record<string, string | number> = {})
   const defaults = messages[locale.value] as Record<string, string>
   const localBrowser = localBrowserMessages[locale.value] as Record<string, string>
   const assetSettings = assetSettingsMessages[locale.value] as Record<string, string>
-  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), assetSettings[key] || localBrowser[key] || connectionUi[key] || databaseUi[key] || cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
+  const workspaceState = workspaceStateMessages[locale.value] as Record<string, string>
+  return Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), workspaceState[key] || assetSettings[key] || localBrowser[key] || connectionUi[key] || databaseUi[key] || cellData[key] || multiView[key] || overrides[key] || defaults[key] || key)
 }
 
 export function toggleLocale(): void {

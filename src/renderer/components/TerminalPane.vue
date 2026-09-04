@@ -6,13 +6,14 @@ import 'xterm/css/xterm.css'
 import type { CodexRateWindow, CodexStatus, CodexDailyUsage } from '../../shared/codex'
 import { withoutAnsiBackgrounds } from '../../shared/ansi'
 import type { ServerStatus, SshDataEvent, SshSessionStatus, SshStatusEvent } from '../../shared/ssh'
+import type { TabConnectionStatus } from '../../shared/connection-status'
 import { t } from '../i18n'
 import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
 import { terminalClipboardKeyHandler } from '../terminal-clipboard'
 import UiIcon from './UiIcon.vue'
 
 const props = defineProps<{ connectionId: string; active: boolean; local?: boolean; sftpOpen?: boolean }>()
-const emit = defineEmits<{ toggleSftp: [] }>()
+const emit = defineEmits<{ toggleSftp: []; 'connection-status': [status: TabConnectionStatus] }>()
 
 const terminalHost = ref<HTMLElement | null>(null)
 const status = ref<SshSessionStatus>('connecting')
@@ -44,6 +45,8 @@ let codexRefreshTimer: number | undefined
 let pendingTerminalEscape = ''
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
+
+watch(status, (value) => emit('connection-status', value), { immediate: true, flush: 'sync' })
 
 const terminalThemes: Record<'dark' | 'light', ITheme> = {
   dark: { background: '#0b0f14', foreground: '#d7dee7', cursor: '#79b8ff', black: '#111821', red: '#ff7b86', green: '#57d6a5', yellow: '#e5bd68', blue: '#79b8ff', magenta: '#c4a7ff', cyan: '#70cfff', white: '#c8d2dc', brightBlack: '#778493', brightRed: '#ff9aa2', brightGreen: '#7be6bd', brightYellow: '#f2d68d', brightBlue: '#a1ccff', brightMagenta: '#d7c4ff', brightCyan: '#9be2ff', brightWhite: '#f4f7fa', selectionBackground: '#25476b', selectionForeground: '#ffffff', selectionInactiveBackground: '#24303d' },
@@ -149,6 +152,7 @@ async function connect(): Promise<void> {
       return
     }
     sessionId = result.sessionId
+    status.value = 'connected'
     flushPending(result.sessionId)
     resizeTerminal()
   } catch (error) {
@@ -392,6 +396,7 @@ watch(() => props.active, (active) => {
 
 onBeforeUnmount(() => {
   disposed = true
+  status.value = 'closed'
   closeCodexStatus()
   removeDataListener?.()
   removeStatusListener?.()

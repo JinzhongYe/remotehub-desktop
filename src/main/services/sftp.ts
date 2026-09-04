@@ -5,6 +5,7 @@ import { isUtf8 } from 'node:buffer'
 import { basename, isAbsolute, join, posix } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import type { Connection } from '../../shared/types'
+import type { SessionConnectionStatusEvent, TabConnectionStatus } from '../../shared/connection-status'
 import { joinRemotePath, normalizeRemotePath, type SftpConnectResult, type SftpEntry, type SftpEntryType, type SftpQueueResult, type SftpTransferConflict, type SftpTransferEvent, type SftpTransferItem } from '../../shared/sftp'
 import { sshErrorCode } from '../../shared/ssh'
 import { CredentialService } from './credentials'
@@ -15,6 +16,7 @@ import { TransferManager, type TransferControl, type TransferHooks } from './tra
 type SftpAttrs = { size?: number; mtime?: number; mode?: number }
 type SftpListItem = { filename: string; attrs: SftpAttrs }
 type SftpLike = {
+  on?(event: string, listener: (...args: unknown[]) => void): SftpLike
   readdir(path: string, callback: (error: Error | undefined, list: SftpListItem[]) => void): void
   realpath(path: string, callback: (error: Error | undefined, resolved: string) => void): void
   stat(path: string, callback: (error: Error | undefined, attrs: SftpAttrs) => void): void
@@ -37,7 +39,7 @@ type SshClientLike = {
 }
 type SshClientConstructor = new () => SshClientLike
 type SftpSession = { id: string; connectionId: string; client: SshClientLike; sftp: SftpLike }
-type EventSink = (channel: 'sftp:transfer', payload: SftpTransferEvent) => void
+type EventSink = (channel: 'sftp:transfer' | 'sftp:status', payload: SftpTransferEvent | SessionConnectionStatusEvent) => void
 export type FilePlan = { localPath: string; remotePath: string; relativePath: string; size: number; modifiedAt: number }
 export type DirectoryPlan = { path: string; modifiedAt: number }
 
@@ -87,14 +89,25 @@ export class SftpService {
             settled = true
             const sessionId = randomUUID()
             this.sessions.set(sessionId, { id: sessionId, connectionId: connection.id, client, sftp })
+            sftp.on?.('error', (error) => this.closeSession(sessionId, 'error', error instanceof Error ? error.message : 'SFTP channel failed'))
+            sftp.on?.('end', () => this.closeSession(sessionId, 'closed'))
+            sftp.on?.('close', () => this.closeSession(sessionId, 'closed'))
             try { this.storage.markConnected(connection.id, Date.now()) } catch { /* metadata is best effort */ }
+            this.emitStatus({ sessionId, status: 'connected' })
             resolve({ sessionId, homePath: normalizeRemotePath(homePath || '/') })
           })
         })
       })
-      client.on('error', fail)
-      client.on('end', () => this.removeClient(client))
-      client.on('close', () => this.removeClient(client))
+      client.on('error', (error) => {
+        if (!settled) fail(error)
+        else this.removeClient(client, 'error', error instanceof Error ? error.message : 'SFTP connection failed')
+      })
+      const closed = (): void => {
+        if (!settled) fail(new Error('SFTP connection closed before it was ready'))
+        else this.removeClient(client, 'closed')
+      }
+      client.on('end', closed)
+      client.on('close', closed)
       try {
         client.connect({
           host: connection.host,
@@ -251,10 +264,15 @@ export class SftpService {
   }
 
   disconnect(sessionId: string): void {
+    this.closeSession(sessionId, 'closed')
+  }
+
+  private closeSession(sessionId: string, status: TabConnectionStatus, message?: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
-    this.transfers.closeSession(sessionId)
     this.sessions.delete(sessionId)
+    this.transfers.closeSession(sessionId)
+    this.emitStatus({ sessionId, status, message })
     try { session.sftp.end() } catch { /* best effort */ }
     try { session.client.end() } catch { /* best effort */ }
   }
@@ -356,10 +374,13 @@ export class SftpService {
     try { this.send('sftp:transfer', event) } catch { /* renderer may already be closed */ }
   }
 
-  private removeClient(client: SshClientLike): void {
+  private emitStatus(event: SessionConnectionStatusEvent): void {
+    try { this.send('sftp:status', event) } catch { /* renderer may already be closed */ }
+  }
+
+  private removeClient(client: SshClientLike, status: 'closed' | 'error', message?: string): void {
     for (const [id, session] of this.sessions) if (session.client === client) {
-      this.transfers.closeSession(id)
-      this.sessions.delete(id)
+      this.closeSession(id, status, message)
     }
   }
 }

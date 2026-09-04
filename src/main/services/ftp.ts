@@ -6,6 +6,7 @@ import { basename, join, posix } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { Client, type FileInfo } from 'basic-ftp'
 import type { Connection } from '../../shared/types'
+import type { SessionConnectionStatusEvent } from '../../shared/connection-status'
 import { joinRemotePath, normalizeRemotePath, type SftpConnectResult, type SftpEntry, type SftpEntryType, type SftpQueueResult, type SftpTransferConflict, type SftpTransferEvent, type SftpTransferItem } from '../../shared/sftp'
 import { CredentialService } from './credentials'
 import { appError, StorageService } from './storage'
@@ -19,7 +20,7 @@ type FtpSession = {
   client: Client
   operation: Promise<void>
 }
-type EventSink = (channel: 'ftp:transfer', payload: SftpTransferEvent) => void
+type EventSink = (channel: 'ftp:transfer' | 'ftp:status', payload: SftpTransferEvent | SessionConnectionStatusEvent) => void
 
 const MAX_EDIT_BYTES = 2 * 1024 * 1024
 const MAX_TRANSFER_FILES = 5000
@@ -40,7 +41,9 @@ export class FtpService {
       const homePath = normalizeRemotePath(await client.pwd())
       const sessionId = randomUUID()
       this.sessions.set(sessionId, { id: sessionId, connection, password, client, operation: Promise.resolve() })
+      this.observeSessionClosure(sessionId, client)
       try { this.storage.markConnected(connection.id, Date.now()) } catch { /* metadata is best effort */ }
+      this.emitStatus({ sessionId, status: 'connected' })
       return { sessionId, homePath }
     } catch (error) {
       client.close()
@@ -169,11 +172,29 @@ export class FtpService {
   clearFinishedTransfers(sessionId: string): void { this.getSession(sessionId); this.transfers.clearFinished(sessionId) }
 
   disconnect(sessionId: string): void {
+    this.closeSession(sessionId, 'closed')
+  }
+
+  private closeSession(sessionId: string, status: 'closed' | 'error', message?: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
-    this.transfers.closeSession(sessionId)
     this.sessions.delete(sessionId)
+    this.transfers.closeSession(sessionId)
+    this.emitStatus({ sessionId, status, message })
     session.client.close()
+  }
+
+  private observeSessionClosure(sessionId: string, client: Client): void {
+    // basic-ftp removes socket listeners while closing, so observe its public
+    // close entry point too (including failures originating on a data socket).
+    let status: 'closed' | 'error' = 'error'
+    client.ftp.socket.prependOnceListener('end', () => { status = 'closed' })
+    client.ftp.socket.prependOnceListener('close', (hadError: boolean) => { status = hadError ? 'error' : 'closed' })
+    const closeWithError = client.ftp.closeWithError.bind(client.ftp)
+    client.ftp.closeWithError = (error: Error): void => {
+      closeWithError(error)
+      this.closeSession(sessionId, status, status === 'error' ? error.message : undefined)
+    }
   }
 
   dispose(): void { for (const id of [...this.sessions.keys()]) this.disconnect(id) }
@@ -299,6 +320,7 @@ export class FtpService {
   }
 
   private emit(event: SftpTransferEvent): void { try { this.send('ftp:transfer', event) } catch { /* renderer may already be closed */ } }
+  private emitStatus(event: SessionConnectionStatusEvent): void { try { this.send('ftp:status', event) } catch { /* renderer may already be closed */ } }
 }
 
 export function ftpPath(path: string): string {

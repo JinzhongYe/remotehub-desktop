@@ -1,5 +1,8 @@
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseTable } from '../../../shared/database'
 import type { Connection } from '../../../shared/types'
+import type { SessionConnectionStatusEvent } from '../../../shared/connection-status'
+
+export type DatabaseStatusEvent = Omit<SessionConnectionStatusEvent, 'sessionId'>
 
 export interface DatabaseTunnel {
   connection: Connection
@@ -10,6 +13,7 @@ export interface DatabaseAdapter {
   readonly type: 'mysql' | 'postgres' | 'sqlite'
   readonly database?: string
   readonly serverVersion: string
+  onStatus?(listener: (event: DatabaseStatusEvent) => void): () => void
   ping(): Promise<void>
   listDatabases(): Promise<DatabaseCatalog[]>
   useDatabase(database: string): Promise<void>

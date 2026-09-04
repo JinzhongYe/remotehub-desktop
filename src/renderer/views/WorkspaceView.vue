@@ -161,6 +161,14 @@ async function moveConnection(id: string, beforeId?: string, groupId?: string): 
   }
 }
 
+async function moveGroup(id: string, targetId: string, after: boolean): Promise<void> {
+  try {
+    await connectionStore.moveGroup(id, targetId, after)
+  } catch (error) {
+    setError(error, 'saveFailed')
+  }
+}
+
 function createGroup(): void {
   editingGroup.value = null
   groupName.value = ''
@@ -198,7 +206,7 @@ async function removeGroup(group: Group): Promise<void> {
       <div class="toolbar-actions"><button class="toolbar-button" @click="openCreate">＋ {{ t('newConnection') }}</button><button class="toolbar-button muted theme-toggle" :title="theme === 'dark' ? t('lightMode') : t('darkMode')" :aria-label="theme === 'dark' ? t('lightMode') : t('darkMode')" @click="toggleTheme">{{ theme === 'dark' ? '☀' : '☾' }}</button><button class="toolbar-button muted" @click="toggleLocale">{{ locale === 'zh-CN' ? 'EN' : '中文' }}</button></div>
     </header>
     <div class="app-body">
-      <ConnectionExplorer :connections="connectionStore.filteredConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @import-connections="importConnections" @export-connections="exportConnections" @test="testConnection" @move="moveConnection" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
+      <ConnectionExplorer :connections="connectionStore.filteredConnections" :groups="connectionStore.groups" :selected-id="connectionStore.selectedId" :search="connectionStore.search" @update:search="connectionStore.search = $event" @select="selectConnection" @sftp="openSftp" @create="openCreate" @edit="openEdit" @remove="removeConnection" @duplicate="duplicateConnection" @import-connections="importConnections" @export-connections="exportConnections" @test="testConnection" @move="moveConnection" @move-group="moveGroup" @create-group="createGroup" @edit-group="editGroup" @remove-group="removeGroup" />
       <main class="main-workspace"><WorkspaceShell :shortcut-modifier="shortcutModifier" /></main>
     </div>
     <footer class="status-bar"><span class="status-item"><span class="status-dot"></span>{{ statusText }}</span><span class="status-item">{{ appInfo?.platform || 'desktop' }} · {{ t('localOnly') }}</span><span class="status-item version">{{ appInfo?.version ? `v${appInfo.version}` : 'v0.1.0' }}</span></footer>

@@ -110,8 +110,25 @@ export class StorageService {
   }
 
   listGroups(): Group[] {
-    if (!this.db) return [...this.fallbackData.groups]
+    if (!this.db) return this.fallbackData.groups.map((item, index) => ({ ...item, sortOrder: item.sortOrder ?? index })).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
     return this.db.prepare('SELECT id, name, sort_order AS sortOrder FROM groups ORDER BY sort_order, name COLLATE NOCASE').all() as Group[]
+  }
+
+  reorderGroups(ids: string[]): Group[] {
+    if (!Array.isArray(ids) || Array.from(ids).some((id) => typeof id !== 'string' || !id || id.length > 100) || new Set(ids).size !== ids.length) throw appError('INVALID_ORDER', 'Group order is invalid')
+    const knownGroups = this.listGroups()
+    const byId = new Map(knownGroups.map((group) => [group.id, group]))
+    if (ids.length !== byId.size || ids.some((id) => !byId.has(id))) throw appError('INVALID_ORDER', 'Group order is incomplete')
+    if (!this.db) {
+      const groups = ids.map((id, sortOrder) => ({ ...byId.get(id)!, sortOrder }))
+      const nextData = { ...this.fallbackData, groups }
+      persistFallback(this.fallbackPath, nextData)
+      this.fallbackData = nextData
+      return this.listGroups()
+    }
+    const update = this.db.prepare('UPDATE groups SET sort_order = ? WHERE id = ?')
+    this.db.transaction(() => ids.forEach((id, sortOrder) => update.run(sortOrder, id)))()
+    return this.listGroups()
   }
 
   saveConnection(input: ConnectionInput): Connection {

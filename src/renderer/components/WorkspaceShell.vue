@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Connection } from '../../shared/types'
+import type { TabConnectionStatus } from '../../shared/connection-status'
 import { useConnectionStore } from '../stores/connection'
 import { clampSplitRatio, useWorkspaceStore, type WorkspaceViewCount } from '../stores/workspace'
 import TerminalPane from './TerminalPane.vue'
@@ -18,7 +19,7 @@ const DatabasePane = defineAsyncComponent(() => import('./DatabasePane.vue'))
 const props = defineProps<{ shortcutModifier: string }>()
 const workspace = useWorkspaceStore()
 const connections = useConnectionStore()
-const databaseConnected = ref<Record<string, boolean>>({})
+const tabStatuses = ref<Record<string, TabConnectionStatus>>({})
 const workspaceContent = ref<HTMLElement | null>(null)
 const tabStrip = ref<HTMLElement | null>(null)
 const draggingTabId = ref('')
@@ -41,6 +42,9 @@ onUnmounted(() => {
 })
 
 watch(() => workspace.activeId, () => { void nextTick(revealActiveTab) })
+watch(() => workspace.tabs.map(tab => tab.id), (ids) => {
+  for (const id of Object.keys(tabStatuses.value)) if (!ids.includes(id)) delete tabStatuses.value[id]
+})
 
 function revealActiveTab(): void {
   const tab = Array.from(tabStrip.value?.querySelectorAll<HTMLElement>('[data-tab-id]') || []).find((item) => item.dataset.tabId === workspace.activeId)
@@ -123,9 +127,22 @@ function connectionFor(connectionId?: string): Connection | null {
   return connections.connections.find((connection) => connection.id === connectionId) || null
 }
 
-function setDatabaseConnected(tabId: string, connected: boolean): void {
-  if (connected) databaseConnected.value[tabId] = true
-  else delete databaseConnected.value[tabId]
+function setTabStatus(tabId: string, status: TabConnectionStatus): void {
+  if (workspace.tabs.some(tab => tab.id === tabId)) tabStatuses.value[tabId] = status
+}
+
+function statusFor(tabId: string): TabConnectionStatus {
+  return tabStatuses.value[tabId] ?? 'closed'
+}
+
+function statusText(tabId: string): string {
+  const status = statusFor(tabId)
+  return t(status === 'error' ? 'connectionFailed' : status)
+}
+
+function tabColor(connectionId?: string): string | undefined {
+  const color = connectionFor(connectionId)?.color
+  return color && /^#[\da-f]{6}$/i.test(color) ? color : undefined
 }
 
 function openConnection(connection: Connection): void {
@@ -193,8 +210,9 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
   <section class="workspace-shell">
     <div class="tab-bar">
       <div ref="tabStrip" class="tab-strip" role="tablist" @wheel="scrollTabs" @dragover="dragOverStrip" @drop="dropTab($event)">
-        <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id), dragging: draggingTabId === tab.id, 'drop-before': tabDrop?.id === tab.id && !tabDrop.after, 'drop-after': tabDrop?.id === tab.id && tabDrop.after }" role="tab" :data-tab-id="tab.id" :draggable="tab.closable" :title="tab.title" :aria-label="tab.title" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)" @dragstart="startTabDrag($event, tab.id)" @dragover="dragOverTab($event, tab.id)" @drop.stop="dropTab($event, tab.id)" @dragend="finishTabDrag">
-          <span class="tab-icon"><UiIcon :name="iconFor(tab.type)" /></span><span v-if="databaseConnected[tab.id]" class="status-dot" :title="t('connected')"></span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')"><UiIcon name="pin" :size="12" /></span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)"><UiIcon name="close" :size="14" /></button>
+        <div v-for="tab in workspace.tabs" :key="tab.id" class="workspace-tab" :class="{ active: workspace.activeId === tab.id, secondary: workspace.secondaryIds.includes(tab.id), dragging: draggingTabId === tab.id, 'drop-before': tabDrop?.id === tab.id && !tabDrop.after, 'drop-after': tabDrop?.id === tab.id && tabDrop.after }" :style="{ '--tab-color': tabColor(tab.connectionId) }" role="tab" :data-tab-id="tab.id" :draggable="tab.closable" :title="tab.connectionId ? `${tab.title} · ${statusText(tab.id)}` : tab.title" :aria-label="tab.connectionId ? `${tab.title} · ${statusText(tab.id)}` : tab.title" :tabindex="workspace.activeId === tab.id ? 0 : -1" :aria-selected="workspace.activeId === tab.id" @click="workspace.activate(tab.id)" @keydown.enter="workspace.activate(tab.id)" @dragstart="startTabDrag($event, tab.id)" @dragover="dragOverTab($event, tab.id)" @drop.stop="dropTab($event, tab.id)" @dragend="finishTabDrag">
+          <span v-if="tabColor(tab.connectionId)" class="tab-asset-color" :title="t('colorLabel')" aria-hidden="true"></span>
+          <span class="tab-icon"><UiIcon :name="iconFor(tab.type)" /></span><span v-if="tab.connectionId" class="tab-connection-status" :class="statusFor(tab.id)" :data-status="statusFor(tab.id)" role="img" :aria-label="statusText(tab.id)" :title="statusText(tab.id)"></span><span class="tab-title">{{ tab.title }}</span><span v-if="tab.pinned" class="tab-pin" :title="t('pinnedTab')"><UiIcon name="pin" :size="12" /></span><button v-else-if="tab.closable" class="tab-close" :aria-label="t('closeTab')" @click.stop="workspace.close(tab.id)"><UiIcon name="close" :size="14" /></button>
         </div>
         <button class="new-tab" :title="`${t('newTab')} (${shortcutModifier} T)`" :aria-label="t('newTab')" :disabled="!workspace.activeTab?.connectionId" @click="openActiveAgain"><UiIcon name="plus" /></button>
       </div>
@@ -237,13 +255,13 @@ function resizeWorkspaceWithKeyboard(axis: 'x' | 'y', event: KeyboardEvent): voi
           <div v-if="workspace.viewCount > 1" class="split-pane-heading"><select class="pane-connection-picker" :value="tab.id" :title="tab.title" :aria-label="t('selectViewConnection')" @change="workspace.showInPane(tab.id, ($event.target as HTMLSelectElement).value)"><option v-for="option in workspace.tabs.filter(item => item.closable)" :key="option.id" :value="option.id">{{ option.title }}</option></select><small v-if="workspace.activeId === tab.id">{{ t('focusedView') }}</small><button :title="t('closeView')" :aria-label="t('closeView')" @click.stop="workspace.closePane(tab.id)"><UiIcon name="close" /></button></div>
           <div class="workspace-pane-body">
             <SplitPane v-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'ssh'" class="ssh-workspace" :class="[`sftp-${tab.sftpPosition ?? 'bottom'}`, { 'second-collapsed': tab.sftpOpen === false }]" :direction="tab.sftpPosition === 'left' || tab.sftpPosition === 'right' ? 'horizontal' : 'vertical'" :reverse="tab.sftpPosition === 'left' || tab.sftpPosition === 'top'" :initial="60">
-              <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="tab.sftpOpen !== false" @toggle-sftp="workspace.toggleSftp(tab.id)" /></template>
+              <template #first><TerminalPane :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" :sftp-open="tab.sftpOpen !== false" @toggle-sftp="workspace.toggleSftp(tab.id)" @connection-status="setTabStatus(tab.id, $event)" /></template>
               <template #second><SftpPane v-show="tab.sftpOpen !== false" :connection-id="tab.connectionId" embedded :position="tab.sftpPosition ?? 'bottom'" @position="workspace.setSftpPosition(tab.id, $event)" /></template>
             </SplitPane>
-            <TerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'shell'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" local />
-            <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" />
-            <SftpPane v-else-if="tab.type === 'sftp' && (connectionFor(tab.connectionId)?.type === 'ssh' || connectionFor(tab.connectionId)?.type === 'ftp')" :connection-id="tab.connectionId" :protocol="connectionFor(tab.connectionId)?.type === 'ftp' ? 'ftp' : 'sftp'" />
-            <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" @connection-status="setDatabaseConnected(tab.id, $event)" />
+            <TerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'shell'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" local @connection-status="setTabStatus(tab.id, $event)" />
+            <SerialTerminalPane v-else-if="tab.type === 'terminal' && connectionFor(tab.connectionId)?.type === 'serial'" :connection-id="tab.connectionId" :active="workspace.isVisible(tab.id)" @connection-status="setTabStatus(tab.id, $event)" />
+            <SftpPane v-else-if="tab.type === 'sftp' && (connectionFor(tab.connectionId)?.type === 'ssh' || connectionFor(tab.connectionId)?.type === 'ftp')" :connection-id="tab.connectionId" :protocol="connectionFor(tab.connectionId)?.type === 'ftp' ? 'ftp' : 'sftp'" @connection-status="setTabStatus(tab.id, $event)" />
+            <DatabasePane v-else-if="tab.type === 'sql' && connectionFor(tab.connectionId)?.type === 'database'" :connection-id="tab.connectionId" @connection-status="setTabStatus(tab.id, $event)" />
             <div v-else class="workspace-placeholder">
               <div class="connection-overview">
                 <div class="overview-icon"><UiIcon :name="connectionFor(tab.connectionId)?.type === 'database' ? 'database' : 'terminal'" :size="20" /></div>
