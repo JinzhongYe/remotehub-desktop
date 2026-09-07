@@ -13,6 +13,8 @@
   background: #080b10;
   color-scheme: dark;
   font-synthesis: none;
+  /* xterm's offscreen body-level measurer and terminal rows must use full-width CJK punctuation. */
+  text-spacing-trim: space-all;
   --bg: #080b10;
   --panel: #0e131a;
   --panel-2: #151c25;
