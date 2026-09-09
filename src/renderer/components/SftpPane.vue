@@ -130,7 +130,7 @@ async function connect(): Promise<void> {
       if (disposed) return
       const connection = connections.find((item: { id: string }) => item.id === props.connectionId)
       if (connection?.authType === 'none' && !await window.api.ssh.hasSessionCredential(props.connectionId)) {
-        const answer = await sshPassword.request(connection.id, `${connection.name} · ${connection.username || ''}@${connection.host}`)
+        const answer = await sshPassword.request(connection.id, `${connection.name} · ${connection.username || ''}@${connection.host}`, props.embedded ? 'ssh' : 'sftp')
         if (answer.status !== 'submitted' || disposed) {
           if (answer.status === 'timeout') {
             errorMessage.value = t('sshPasswordTimeout')
@@ -164,7 +164,6 @@ async function connect(): Promise<void> {
     await refresh()
   } catch (error) {
     pendingPassword = undefined
-    if (props.protocol !== 'ftp') sshPassword.forget(props.connectionId)
     if (!disposed && connectionStatus.value === 'connecting') statusTracker.finish('error')
     errorMessage.value = error instanceof Error ? error.message : t('sftpUnavailable')
   } finally {

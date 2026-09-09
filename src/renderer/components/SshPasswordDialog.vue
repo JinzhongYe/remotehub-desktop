@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SshPasswordOptions } from '../../shared/ssh'
 import { t } from '../i18n'
 
-defineProps<{ name: string }>()
+const props = defineProps<{ name: string; protocol: 'ssh' | 'sftp' }>()
 const emit = defineEmits<{ submit: [options: SshPasswordOptions]; cancel: []; timeout: [] }>()
+const title = computed(() => t(props.protocol === 'sftp' ? 'sftpPasswordPrompt' : 'sshPasswordPrompt'))
 const password = ref('')
 const savePassword = ref(false)
 const input = ref<HTMLInputElement | null>(null)
@@ -37,8 +38,8 @@ onBeforeUnmount(() => { clearInterval(timer); password.value = '' })
 <template>
   <Teleport to="body">
     <div class="modal-layer" @keydown.esc.stop.prevent="finish('cancel')">
-      <form class="connection-dialog ssh-password-dialog" role="dialog" aria-modal="true" :aria-label="t('sshPasswordPrompt')" @submit.prevent="finish('submit')">
-        <h2>{{ t('sshPasswordPrompt') }}</h2>
+      <form class="connection-dialog ssh-password-dialog" role="dialog" aria-modal="true" :aria-label="title" @submit.prevent="finish('submit')">
+        <h2>{{ title }}</h2>
         <p>{{ name }}</p>
         <label class="field"><span>{{ t('credential') }}</span><input ref="input" v-model="password" type="password" required maxlength="16384" autocomplete="current-password"></label>
         <label class="checkbox"><input v-model="savePassword" type="checkbox"> {{ t('saveSshPassword') }}</label>

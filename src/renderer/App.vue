@@ -30,6 +30,7 @@ onUnmounted(() => removeCloseListener?.())
     v-if="sshPassword.activePrompt"
     :key="sshPassword.activePrompt.connectionId"
     :name="sshPassword.activePrompt.label"
+    :protocol="sshPassword.activePrompt.protocol"
     @submit="sshPassword.submit"
     @cancel="sshPassword.cancel"
     @timeout="sshPassword.timeout"

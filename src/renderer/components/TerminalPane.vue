@@ -144,7 +144,7 @@ async function connect(): Promise<void> {
       if (disposed) return
       const connection = connections.find((item: { id: string }) => item.id === props.connectionId)
       if (connection?.authType === 'none') {
-        const answer = await sshPassword.request(connection.id, `${connection.name} · ${connection.username || ''}@${connection.host}`)
+        const answer = await sshPassword.request(connection.id, `${connection.name} · ${connection.username || ''}@${connection.host}`, 'ssh')
         if (answer.status !== 'submitted' || disposed) {
           if (answer.status === 'timeout') statusMessage.value = t('sshPasswordTimeout')
           status.value = answer.status === 'timeout' ? 'error' : 'closed'
@@ -175,7 +175,6 @@ async function connect(): Promise<void> {
     resizeTerminal()
   } catch (error) {
     pendingPassword = undefined
-    if (!props.local) sshPassword.forget(props.connectionId)
     status.value = 'error'
     statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
   } finally {
