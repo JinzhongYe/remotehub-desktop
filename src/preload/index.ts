@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ConnectionOrderItem, ConnectionSaveRequest, ConnectionTestRequest } from '../shared/types'
-import type { SshDataEvent, SshStatusEvent } from '../shared/ssh'
+import type { SshDataEvent, SshStatusEvent, SshPasswordOptions } from '../shared/ssh'
 import type { SftpTransferEvent } from '../shared/sftp'
 import type { SessionConnectionStatusEvent } from '../shared/connection-status'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
@@ -79,7 +79,7 @@ const api = {
     test: (target: string | ConnectionTestRequest) => ipcRenderer.invoke('connections:test', target)
   },
   ssh: {
-    connect: (connectionId: string) => ipcRenderer.invoke('ssh:connect', connectionId),
+    connect: (connectionId: string, options?: SshPasswordOptions) => ipcRenderer.invoke('ssh:connect', connectionId, options),
     trustHostKey: (connectionId: string, fingerprint: string) => ipcRenderer.invoke('ssh:trustHostKey', connectionId, fingerprint),
     write: (sessionId: string, data: string) => ipcRenderer.invoke('ssh:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('ssh:resize', sessionId, cols, rows),

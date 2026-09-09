@@ -1,5 +1,10 @@
 export type SshSessionStatus = 'connecting' | 'connected' | 'error' | 'closed'
 
+export interface SshPasswordOptions {
+  password: string
+  savePassword: boolean
+}
+
 export type SshConnectResult = { sessionId: string; trustRequired?: false } | { trustRequired: true; fingerprint: string }
 
 export interface SshDataEvent {

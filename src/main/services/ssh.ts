@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import type { CodexStatus } from '../../shared/codex'
 import type { Connection } from '../../shared/types'
+import type { SshPasswordOptions } from '../../shared/ssh'
 import { parseServerStatus, sshErrorCode, type ServerStatus, type SshConnectResult, type SshDataEvent, type SshStatusEvent } from '../../shared/ssh'
 import { CredentialService } from './credentials'
 import { fingerprintHostKey, hostKeyState } from './host-key'
@@ -39,6 +40,8 @@ type SshSession = {
   connectionId: string
   client: SshClientLike
   stream?: SshStreamLike
+  temporaryPassword?: string
+  target?: string
 }
 
 const SERVER_STATUS_COMMAND = String.raw`
@@ -72,9 +75,10 @@ export class SshService {
 
   constructor(private readonly storage: StorageService, private readonly credentials: CredentialService, private readonly send: EventSink) {}
 
-  async connect(connection: Connection): Promise<SshConnectResult> {
+  async connect(connection: Connection, options?: SshPasswordOptions): Promise<SshConnectResult> {
     if (connection.type !== 'ssh') throw appError('SSH_CONNECTION_INVALID', 'Only SSH connections can open a terminal')
-    const credential = this.credentials.get(connection.credentialId)
+    if (!connection.username?.trim()) throw appError('SSH_USERNAME_REQUIRED', 'SSH 用户名不能为空')
+    const credential = options?.password ?? this.credentials.get(connection.credentialId)
     if (!credential) throw appError('CREDENTIAL_MISSING', 'Save a password or private key before connecting')
 
     const client = this.createClient()
@@ -118,8 +122,21 @@ export class SshService {
           stream.on('close', () => this.closeSession(sessionId, true))
           stream.on('end', () => this.closeSession(sessionId, true))
           if (!settled) {
+            if (options?.savePassword) {
+              try {
+                const latest = this.storage.getConnection(connection.id)
+                if (latest) {
+                  const credentialId = this.credentials.save(latest.name, credential, latest.credentialId)
+                  this.storage.saveConnection({ ...latest, authType: 'password', credentialId })
+                }
+              } catch (saveError) { fail(saveError); return }
+            }
             settled = true
             try { this.storage.markConnected(connection.id, Date.now()) } catch { /* connection metadata is best effort */ }
+            if (options && !options.savePassword) {
+              session.temporaryPassword = credential
+              session.target = JSON.stringify([connection.host, connection.port, connection.username])
+            }
             this.emitStatus({ sessionId, status: 'connected' })
             resolve({ sessionId })
           }
@@ -141,12 +158,17 @@ export class SshService {
             receivedHostKey = fingerprintHostKey(key)
             return hostKeyState(connection.hostKeyFingerprint, receivedHostKey) === 'trusted'
           },
-          ...(connection.authType === 'privateKey' ? { privateKey: credential } : { password: credential })
+          ...(!options && connection.authType === 'privateKey' ? { privateKey: credential } : { password: credential })
         })
       } catch (error) {
         fail(error)
       }
     })
+  }
+
+  temporaryPassword(connection: Connection): string | undefined {
+    const target = JSON.stringify([connection.host, connection.port, connection.username])
+    return [...this.sessions.values()].find((session) => session.connectionId === connection.id && session.target === target && session.stream)?.temporaryPassword
   }
 
   trustHostKey(connectionId: string, fingerprint: string): void {

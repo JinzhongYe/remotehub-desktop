@@ -341,7 +341,7 @@ function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'c
     host: host.slice(0, type === 'shell' ? 4096 : 255),
     port: type === 'shell' ? 1 : port,
     username: type === 'serial' || type === 'shell' ? undefined : String(input.username || '').trim().slice(0, 120) || undefined,
-    authType: type === 'serial' || type === 'shell' ? undefined : input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : undefined,
+    authType: type === 'serial' || type === 'shell' ? undefined : input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : type === 'ssh' && input.authType === 'none' ? 'none' : undefined,
     databaseType: type === 'database' && ['mysql', 'postgres', 'sqlite'].includes(input.databaseType || '') ? input.databaseType : undefined,
     database: type === 'database' ? String(input.database || '').trim().slice(0, 200) || undefined : undefined,
     databaseSslMode: type === 'database' && input.databaseType === 'postgres' && ['disable', 'require', 'verify-full'].includes(input.databaseSslMode || '') ? input.databaseSslMode : undefined,

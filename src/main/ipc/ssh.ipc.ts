@@ -1,13 +1,15 @@
 import { ipcMain } from 'electron'
+import type { SshPasswordOptions } from '../../shared/ssh'
 import type { SshService } from '../services/ssh'
 import type { StorageService } from '../services/storage'
 
 export function registerSshIpc(storage: StorageService, ssh: SshService): void {
-  ipcMain.handle('ssh:connect', (_event, connectionId: string) => {
+  ipcMain.handle('ssh:connect', (_event, connectionId: string, options?: SshPasswordOptions) => {
     if (typeof connectionId !== 'string' || connectionId.length > 100) throw storageError('INVALID_CONNECTION_ID', 'Connection identifier is invalid')
     const connection = storage.getConnection(connectionId)
     if (!connection) throw storageError('CONNECTION_NOT_FOUND', 'Connection not found')
-    return ssh.connect(connection)
+    if (options !== undefined && (!options || typeof options.password !== 'string' || !options.password || options.password.length > 16384 || typeof options.savePassword !== 'boolean')) throw storageError('INVALID_CREDENTIAL', 'Password input is invalid')
+    return ssh.connect(connection, options)
   })
   ipcMain.handle('ssh:trustHostKey', (_event, connectionId: string, fingerprint: string) => {
     ssh.trustHostKey(connectionId, fingerprint)

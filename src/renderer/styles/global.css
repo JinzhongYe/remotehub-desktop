@@ -412,7 +412,19 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; color
 .sftp-toolbar .toolbar-button { min-height: 28px; flex: 0 0 auto; padding: 5px 8px; }
 .sftp-toolbar .primary-transfer { border-color: color-mix(in srgb, var(--transfer) 45%, var(--line)); color: var(--transfer); background: color-mix(in srgb, var(--transfer) 9%, transparent); }
 .sftp-toolbar .toolbar-button:focus-visible, .sftp-layout-menu summary:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: 1px; }
-.sftp-layout-menu { position: relative; margin-left: auto; }
+.sftp-layout-menu { position: relative; margin-left: auto; flex: 0 0 30px; }
+.sftp-pane { container-type: inline-size; container-name: sftp; min-width: 0; }
+@container sftp (max-width: 620px) {
+  .sftp-responsive-action > span { display: none; }
+  .sftp-toolbar { gap: 6px; }
+  .sftp-toolbar-actions { gap: 4px; }
+}
+@container sftp (max-width: 360px) {
+  .sftp-toolbar-heading > span:last-child { display: none; }
+  .sftp-toolbar-heading { padding-right: 4px; }
+  .sftp-toolbar { flex-wrap: wrap; }
+  .sftp-toolbar-actions { flex-shrink: 0; }
+}
 .sftp-layout-menu summary { display: grid; width: 30px; height: 28px; place-items: center; border-radius: 4px; color: var(--muted); cursor: pointer; list-style: none; }
 .sftp-layout-menu summary:hover { color: var(--text); background: var(--panel-2); }
 .sftp-layout-menu summary::-webkit-details-marker { display: none; }

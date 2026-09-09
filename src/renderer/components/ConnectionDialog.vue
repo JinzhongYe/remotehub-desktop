@@ -54,7 +54,8 @@ watch(() => [props.open, props.connection], () => {
 }, { immediate: true })
 
 function submit(): void {
-  emit('save', connectionInput(), credential.value || undefined, clearCredential.value, form.type === 'ssh' ? privateKeyPath.value || undefined : undefined)
+  const askPassword = form.type === 'ssh' && form.authType === 'none'
+  emit('save', connectionInput(), askPassword ? undefined : credential.value || undefined, askPassword || clearCredential.value, form.type === 'ssh' && form.authType === 'privateKey' ? privateKeyPath.value || undefined : undefined)
 }
 
 function connectionInput(): ConnectionInput {
@@ -158,8 +159,8 @@ async function chooseShellDirectory(): Promise<void> {
         </template>
         <label v-if="form.type === 'shell' || form.type === 'serial'" class="field wide"><span>{{ t('initialCommand') }}</span><textarea v-model="form.initialCommand" name="initialCommand" rows="4" :maxlength="MAX_INITIAL_COMMAND_LENGTH" spellcheck="false" :placeholder="t('initialCommandPlaceholder')"></textarea><small>{{ t('initialCommandHint') }}</small></label>
         <template v-if="form.type !== 'serial' && form.type !== 'shell'">
-          <label v-if="form.type !== 'database' || form.databaseType !== 'sqlite'" class="field"><span>{{ t('username') }}</span><input v-model="form.username" :required="form.type === 'database'" :placeholder="form.type === 'database' ? 'root / app_user' : t('optional')"></label>
-          <label v-if="form.type === 'ssh'" class="field"><span>{{ t('authType') }}</span><select v-model="form.authType"><option value="privateKey">Private Key</option><option value="password">{{ t('passwordVault') }}</option></select></label>
+          <label v-if="form.type !== 'database' || form.databaseType !== 'sqlite'" class="field"><span>{{ t('username') }}</span><input v-model="form.username" :required="form.type === 'database' || form.type === 'ssh'" :placeholder="form.type === 'database' ? 'root / app_user' : form.type === 'ssh' ? 'root / app_user' : t('optional')"></label>
+          <label v-if="form.type === 'ssh'" class="field"><span>{{ t('authType') }}</span><select v-model="form.authType"><option value="privateKey">Private Key</option><option value="password">{{ t('passwordVault') }}</option><option value="none">{{ t('authNone') }}</option></select></label>
         </template>
         <template v-if="form.type === 'database'">
           <label class="field"><span>{{ t('databaseType') }}</span><select v-model="form.databaseType" @change="changeDatabaseType"><option value="mysql">MySQL · Phase 6</option><option value="postgres">PostgreSQL · Phase 7</option><option value="sqlite">SQLite · Phase 8</option></select></label>
@@ -168,7 +169,7 @@ async function chooseShellDirectory(): Promise<void> {
           <label v-if="form.databaseType === 'postgres'" class="field"><span>{{ t('sshTunnel') }}</span><select v-model="form.sshTunnelId"><option :value="undefined">{{ t('noTunnel') }}</option><option v-for="item in connections.filter((candidate) => candidate.type === 'ssh')" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
         </template>
         <label class="field"><span>{{ t('group') }}</span><select v-model="form.groupId"><option :value="undefined">{{ t('noGroup') }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></label>
-        <label v-if="form.type !== 'serial' && form.type !== 'shell' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="field wide"><span>{{ form.authType === 'privateKey' ? t('privateKey') : t('credential') }}</span><template v-if="form.authType === 'privateKey'"><span class="private-key-picker"><button type="button" class="button secondary" @click="choosePrivateKey">{{ t('choosePrivateKey') }}</button><small :title="privateKeyPath">{{ privateKeyPath ? privateKeyFileName(privateKeyPath) : t('noFileSelected') }}</small></span><textarea v-model="credential" rows="4" autocomplete="off" :disabled="Boolean(privateKeyPath)" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('privateKeyPlaceholder')"></textarea><button v-if="privateKeyPath" type="button" class="text-button align-start" @click="privateKeyPath = ''">{{ t('pasteInstead') }}</button></template><input v-else v-model="credential" type="password" autocomplete="new-password" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('newCredentialPlaceholder')"></label>
+        <label v-if="form.authType !== 'none' && form.type !== 'serial' && form.type !== 'shell' && (form.type !== 'database' || form.databaseType !== 'sqlite')" class="field wide"><span>{{ form.authType === 'privateKey' ? t('privateKey') : t('credential') }}</span><template v-if="form.authType === 'privateKey'"><span class="private-key-picker"><button type="button" class="button secondary" @click="choosePrivateKey">{{ t('choosePrivateKey') }}</button><small :title="privateKeyPath">{{ privateKeyPath ? privateKeyFileName(privateKeyPath) : t('noFileSelected') }}</small></span><textarea v-model="credential" rows="4" autocomplete="off" :disabled="Boolean(privateKeyPath)" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('privateKeyPlaceholder')"></textarea><button v-if="privateKeyPath" type="button" class="text-button align-start" @click="privateKeyPath = ''">{{ t('pasteInstead') }}</button></template><input v-else v-model="credential" type="password" autocomplete="new-password" :placeholder="connection?.credentialId ? t('credentialPlaceholder') : t('newCredentialPlaceholder')"></label>
       </div>
       <label class="field connection-notes"><span>{{ t('notes') }}</span><textarea v-model="form.notes" name="notes" rows="3" :maxlength="MAX_NOTES_LENGTH" :placeholder="t('notesPlaceholder')"></textarea></label>
       <label class="favorite-check"><input v-model="form.favorite" type="checkbox"><span>{{ t('favorite') }}</span></label>

@@ -3,7 +3,7 @@ import type { SerialOptions } from './serial'
 export type ConnectionType = 'ssh' | 'ftp' | 'database' | 'serial' | 'shell'
 export type DatabaseType = 'mysql' | 'postgres' | 'sqlite'
 export type DatabaseSslMode = 'disable' | 'require' | 'verify-full'
-export type AuthType = 'password' | 'privateKey'
+export type AuthType = 'password' | 'privateKey' | 'none'
 
 export interface Connection {
   id: string

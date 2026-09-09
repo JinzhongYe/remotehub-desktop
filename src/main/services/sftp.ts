@@ -52,13 +52,13 @@ export class SftpService {
   private readonly pendingHostKeys = new Map<string, string>()
   private readonly transfers: TransferManager
 
-  constructor(private readonly storage: StorageService, private readonly credentials: CredentialService, private readonly send: EventSink) {
+  constructor(private readonly storage: StorageService, private readonly credentials: CredentialService, private readonly send: EventSink, private readonly sessionPassword?: (connection: Connection) => string | undefined) {
     this.transfers = new TransferManager((item) => this.emit(item), 2)
   }
 
   async connect(connection: Connection): Promise<SftpConnectResult> {
     if (connection.type !== 'ssh') throw appError('SFTP_CONNECTION_INVALID', 'SFTP requires an SSH connection')
-    const credential = this.credentials.get(connection.credentialId)
+    const credential = connection.authType === 'none' ? this.sessionPassword?.(connection) : this.credentials.get(connection.credentialId)
     if (!credential) throw appError('CREDENTIAL_MISSING', 'Save a password or private key before connecting')
     const client = this.createClient()
     let receivedHostKey: string | undefined

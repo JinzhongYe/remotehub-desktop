@@ -13,6 +13,10 @@ export function registerConnectionIpc(storage: StorageService, credentials: Cred
     if (request.credential !== undefined && typeof request.credential !== 'string') throw appError('INVALID_CREDENTIAL', 'Credential is invalid')
     if (request.privateKeyPath !== undefined && typeof request.privateKeyPath !== 'string') throw appError('PRIVATE_KEY_FILE_INVALID', 'Private key file path is invalid')
     storage.validateConnection(request.connection)
+    if (request.connection.type === 'ssh' && !request.connection.username?.trim()) throw appError('SSH_USERNAME_REQUIRED', 'SSH 用户名不能为空')
+    if (request.connection.type === 'ssh' && request.connection.authType === 'none') {
+      request = { ...request, credential: undefined, privateKeyPath: undefined, clearCredential: true }
+    }
     const previousCredentialId = request.connection.credentialId
     const credentialId = request.connection.type === 'serial' || request.connection.type === 'shell'
       ? undefined

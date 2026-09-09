@@ -12,13 +12,28 @@ import { t } from '../i18n'
 import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
 import { terminalClipboardKeyHandler } from '../terminal-clipboard'
 import UiIcon from './UiIcon.vue'
+import SshPasswordDialog from './SshPasswordDialog.vue'
+import type { SshPasswordOptions } from '../../shared/ssh'
+import { useConnectionStore } from '../stores/connection'
 
 const props = defineProps<{ connectionId: string; active: boolean; local?: boolean; sftpOpen?: boolean }>()
+const connectionStore = useConnectionStore()
 const emit = defineEmits<{ toggleSftp: []; 'connection-status': [status: TabConnectionStatus] }>()
 
 const terminalHost = ref<HTMLElement | null>(null)
 const status = ref<SshSessionStatus>('connecting')
 const statusMessage = ref('')
+const passwordPrompt = ref<string | null>(null)
+let passwordResolve: ((value: SshPasswordOptions | null) => void) | undefined
+let pendingPassword: SshPasswordOptions | undefined
+let connecting = false
+
+function finishPassword(value: SshPasswordOptions | null, timedOut = false): void {
+  passwordPrompt.value = null
+  if (timedOut) statusMessage.value = t('sshPasswordTimeout')
+  passwordResolve?.(value)
+  passwordResolve = undefined
+}
 const pendingFingerprint = ref('')
 const contextMenu = ref<{ x: number; y: number } | null>(null)
 const hasSelection = ref(false)
@@ -113,6 +128,8 @@ function resizeTerminal(): void {
 }
 
 async function connect(): Promise<void> {
+  if (connecting || disposed) return
+  connecting = true
   if (sessionId) {
     await (props.local ? window.api.shell.disconnect(sessionId) : window.api.ssh.disconnect(sessionId)).catch(() => undefined)
     sessionId = null
@@ -130,7 +147,21 @@ async function connect(): Promise<void> {
   pendingTerminalEscape = ''
   terminal?.clear()
   try {
-    const result = props.local ? await window.api.shell.connect(props.connectionId) : await window.api.ssh.connect(props.connectionId)
+    if (!props.local && !pendingPassword) {
+      const { connections } = await window.api.connections.list()
+      if (disposed) return
+      const connection = connections.find((item: { id: string }) => item.id === props.connectionId)
+      if (connection?.authType === 'none') {
+        passwordPrompt.value = `${connection.name} · ${connection.username || ''}@${connection.host}`
+        const answer = await new Promise<SshPasswordOptions | null>((resolve) => { passwordResolve = resolve })
+        if (!answer || disposed) {
+          status.value = statusMessage.value ? 'error' : 'closed'
+          return
+        }
+        pendingPassword = answer
+      }
+    }
+    const result = props.local ? await window.api.shell.connect(props.connectionId) : await window.api.ssh.connect(props.connectionId, pendingPassword)
     if ('trustRequired' in result && result.trustRequired) {
       if (disposed) return
       pendingData.clear()
@@ -145,12 +176,17 @@ async function connect(): Promise<void> {
       return
     }
     sessionId = result.sessionId
+    if (pendingPassword?.savePassword) void connectionStore.load().catch(() => undefined)
+    pendingPassword = undefined
     status.value = 'connected'
     flushPending(result.sessionId)
     resizeTerminal()
   } catch (error) {
+    pendingPassword = undefined
     status.value = 'error'
     statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
+  } finally {
+    connecting = false
   }
 }
 
@@ -388,6 +424,8 @@ watch(() => props.active, (active) => {
 })
 
 onBeforeUnmount(() => {
+  finishPassword(null)
+  pendingPassword = undefined
   disposed = true
   status.value = 'closed'
   closeCodexStatus()
@@ -404,6 +442,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <SshPasswordDialog v-if="passwordPrompt !== null" :name="passwordPrompt" @submit="finishPassword" @cancel="finishPassword(null)" @timeout="finishPassword(null, true)" />
   <section class="terminal-pane">
     <div class="terminal-toolbar" role="toolbar" :aria-label="local ? t('localShell') : 'SSH Terminal'">
       <div class="terminal-identity">

@@ -82,7 +82,7 @@ app.whenReady().then(async () => {
   storage = new StorageService()
   const credentials = new CredentialService()
   ssh = new SshService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
-  sftp = new SftpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
+  sftp = new SftpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload), (connection) => ssh?.temporaryPassword(connection))
   ftp = new FtpService(storage, credentials, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   serial = new SerialService(storage, (channel, payload) => mainWindow?.webContents.send(channel, payload))
   database = new DatabaseService(storage, credentials, undefined, undefined, undefined, (event) => mainWindow?.webContents.send('database:status', event))
