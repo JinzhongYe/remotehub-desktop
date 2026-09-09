@@ -7,6 +7,7 @@ import type { SerialDataEvent, SerialSessionStatus, SerialStatusEvent } from '..
 import type { TabConnectionStatus } from '../../shared/connection-status'
 import { t } from '../i18n'
 import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
+import { terminalTheme } from '../terminal-theme'
 
 const props = defineProps<{ connectionId: string; active: boolean }>()
 const emit = defineEmits<{ 'connection-status': [status: TabConnectionStatus] }>()
@@ -21,6 +22,7 @@ let removeDataListener: (() => void) | undefined
 let removeStatusListener: (() => void) | undefined
 let removeInputListener: (() => void) | undefined
 let terminalLayout: ReturnType<typeof observeTerminalLayout> | undefined
+let themeObserver: MutationObserver | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SerialStatusEvent>()
 
@@ -88,10 +90,14 @@ async function disconnect(): Promise<void> {
 onMounted(async () => {
   await loadTerminalFont(13)
   if (disposed || !terminalHost.value) return
-  terminal = new Terminal({ convertEol: true, cursorBlink: true, fontFamily: '"JetBrains Mono", "Noto Sans SC", serif', fontSize: 13, fontWeight: '400', fontWeightBold: '600', minimumContrastRatio: 4.5, theme: { background: '#1a1b1d', foreground: '#e0e0e0', cursor: '#919292' }, scrollback: 10000 })
+  terminal = new Terminal({ convertEol: true, cursorBlink: true, fontFamily: '"JetBrains Mono", "Noto Sans SC", serif', fontSize: 13, fontWeight: '400', fontWeightBold: '600', minimumContrastRatio: 4.5, theme: terminalTheme(), scrollback: 10000 })
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
+  themeObserver = new MutationObserver(() => {
+    if (terminal) terminal.options.theme = terminalTheme()
+  })
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   terminalLayout = observeTerminalLayout(terminalHost.value, terminal, fitAddon)
   removeDataListener = window.api.serial.onData(handleData)
   removeStatusListener = window.api.serial.onStatus(handleStatus)
@@ -115,6 +121,7 @@ onBeforeUnmount(() => {
   removeStatusListener?.()
   removeInputListener?.()
   terminalLayout?.dispose()
+  themeObserver?.disconnect()
   if (sessionId) void window.api.serial.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
 })
