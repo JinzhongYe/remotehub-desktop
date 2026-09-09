@@ -3,6 +3,7 @@ import type { SftpService } from '../services/sftp'
 import type { FtpService } from '../services/ftp'
 import type { StorageService } from '../services/storage'
 import { appError } from '../services/storage'
+import type { SshPasswordOptions } from '../../shared/ssh'
 
 export function registerSftpIpc(storage: StorageService, sftp: SftpService): void {
   registerFileTransferIpc('sftp', storage, sftp)
@@ -17,11 +18,15 @@ export function registerFtpIpc(storage: StorageService, ftp: FtpService): void {
 }
 
 function registerFileTransferIpc(prefix: 'sftp' | 'ftp', storage: StorageService, service: SftpService | FtpService): void {
-  ipcMain.handle(`${prefix}:connect`, (_event, connectionId: string) => {
+  ipcMain.handle(`${prefix}:connect`, (_event, connectionId: string, options?: SshPasswordOptions) => {
     if (typeof connectionId !== 'string' || connectionId.length > 100) throw appError('INVALID_CONNECTION_ID', 'Connection identifier is invalid')
     const connection = storage.getConnection(connectionId)
     if (!connection) throw appError('CONNECTION_NOT_FOUND', 'Connection not found')
-    return service.connect(connection)
+    if (prefix === 'sftp') {
+      if (options !== undefined && (!options || typeof options.password !== 'string' || !options.password || options.password.length > 16384 || typeof options.savePassword !== 'boolean')) throw appError('INVALID_CREDENTIAL', 'Password input is invalid')
+      return (service as SftpService).connect(connection, options)
+    }
+    return (service as FtpService).connect(connection)
   })
   ipcMain.handle(`${prefix}:list`, (_event, sessionId: string, path: string) => service.list(sessionId, path))
   ipcMain.handle(`${prefix}:mkdir`, async (_event, sessionId: string, path: string) => { await service.mkdir(sessionId, path); return { ok: true } })

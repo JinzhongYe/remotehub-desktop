@@ -10,7 +10,7 @@ import type { LocalDirectory } from '../shared/local-files'
 
 function remoteFiles(prefix: 'sftp' | 'ftp') {
   return {
-    connect: (connectionId: string) => ipcRenderer.invoke(`${prefix}:connect`, connectionId),
+    connect: (connectionId: string, options?: SshPasswordOptions) => ipcRenderer.invoke(`${prefix}:connect`, connectionId, options),
     list: (sessionId: string, path: string) => ipcRenderer.invoke(`${prefix}:list`, sessionId, path),
     mkdir: (sessionId: string, path: string) => ipcRenderer.invoke(`${prefix}:mkdir`, sessionId, path),
     rename: (sessionId: string, oldPath: string, newPath: string) => ipcRenderer.invoke(`${prefix}:rename`, sessionId, oldPath, newPath),
@@ -81,6 +81,7 @@ const api = {
   ssh: {
     connect: (connectionId: string, options?: SshPasswordOptions) => ipcRenderer.invoke('ssh:connect', connectionId, options),
     trustHostKey: (connectionId: string, fingerprint: string) => ipcRenderer.invoke('ssh:trustHostKey', connectionId, fingerprint),
+    hasSessionCredential: (connectionId: string): Promise<boolean> => ipcRenderer.invoke('ssh:hasSessionCredential', connectionId),
     write: (sessionId: string, data: string) => ipcRenderer.invoke('ssh:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('ssh:resize', sessionId, cols, rows),
     statusOverview: (sessionId: string) => ipcRenderer.invoke('ssh:statusOverview', sessionId),

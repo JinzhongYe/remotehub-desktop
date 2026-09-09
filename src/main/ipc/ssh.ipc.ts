@@ -15,6 +15,12 @@ export function registerSshIpc(storage: StorageService, ssh: SshService): void {
     ssh.trustHostKey(connectionId, fingerprint)
     return { ok: true }
   })
+  ipcMain.handle('ssh:hasSessionCredential', (_event, connectionId: string) => {
+    if (typeof connectionId !== 'string' || connectionId.length > 100) throw storageError('INVALID_CONNECTION_ID', 'Connection identifier is invalid')
+    const connection = storage.getConnection(connectionId)
+    if (!connection) throw storageError('CONNECTION_NOT_FOUND', 'Connection not found')
+    return ssh.hasTemporaryPassword(connection)
+  })
   ipcMain.handle('ssh:write', (_event, sessionId: string, data: string) => {
     ssh.write(sessionId, data)
     return { ok: true }

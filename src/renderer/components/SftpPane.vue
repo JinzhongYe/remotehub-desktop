@@ -6,6 +6,9 @@ import { joinRemotePath, parentRemotePath, selectSftpPaths, transferProgress } f
 import { LOCAL_COMPUTER_ROOT, localNavigationTarget, localTransferDirectory, type LocalEntry } from '../../shared/local-files'
 import { t } from '../i18n'
 import { confirmDialog } from '../dialog'
+import { useConnectionStore } from '../stores/connection'
+import { useSshPasswordStore } from '../stores/ssh-password'
+import type { SshPasswordOptions } from '../../shared/ssh'
 import FileTypeIcon from './FileTypeIcon.vue'
 import SplitPane from './SplitPane.vue'
 import UiIcon from './UiIcon.vue'
@@ -14,6 +17,8 @@ type SftpPosition = 'right' | 'left' | 'top' | 'bottom'
 
 const props = defineProps<{ connectionId: string; embedded?: boolean; position?: SftpPosition; protocol?: 'sftp' | 'ftp' }>()
 const emit = defineEmits<{ position: [position: SftpPosition]; 'connection-status': [status: TabConnectionStatus] }>()
+const connectionStore = useConnectionStore()
+const sshPassword = useSshPasswordStore()
 const protocolName = computed(() => props.protocol === 'ftp' ? 'FTP' : 'SFTP')
 const remoteApi = computed(() => props.protocol === 'ftp' ? window.api.ftp : window.api.sftp)
 
@@ -50,6 +55,8 @@ let disposed = false
 let localSelectionAnchor = ''
 let remoteSelectionAnchor = ''
 let localRequestId = 0
+let pendingPassword: SshPasswordOptions | undefined
+let connecting = false
 
 const statusTracker = createSessionStatusTracker((status, message) => {
   connectionStatus.value = status
@@ -105,6 +112,8 @@ function isSelected(side: 'local' | 'remote', path: string): boolean {
 }
 
 async function connect(): Promise<void> {
+  if (connecting || disposed) return
+  connecting = true
   loading.value = true
   errorMessage.value = ''
   pendingFingerprint.value = ''
@@ -116,7 +125,24 @@ async function connect(): Promise<void> {
   selectedRemotePaths.value = []
   remoteSelectionAnchor = ''
   try {
-    const result = await remoteApi.value.connect(props.connectionId)
+    if (props.protocol !== 'ftp' && !pendingPassword) {
+      const { connections } = await window.api.connections.list()
+      if (disposed) return
+      const connection = connections.find((item: { id: string }) => item.id === props.connectionId)
+      if (connection?.authType === 'none' && !await window.api.ssh.hasSessionCredential(props.connectionId)) {
+        const answer = await sshPassword.request(connection.id, `${connection.name} · ${connection.username || ''}@${connection.host}`)
+        if (answer.status !== 'submitted' || disposed) {
+          if (answer.status === 'timeout') {
+            errorMessage.value = t('sshPasswordTimeout')
+            statusTracker.finish('error', errorMessage.value)
+          } else statusTracker.finish('closed')
+          return
+        }
+        pendingPassword = answer.options
+      }
+    }
+    const options = pendingPassword && props.embedded ? { ...pendingPassword, savePassword: false } : pendingPassword
+    const result = await remoteApi.value.connect(props.connectionId, options)
     if (result.trustRequired) {
       if (disposed) return
       pendingFingerprint.value = result.fingerprint
@@ -130,15 +156,20 @@ async function connect(): Promise<void> {
     sessionId.value = result.sessionId
     statusTracker.bind(result.sessionId)
     if (!sessionId.value) return
+    if (pendingPassword?.savePassword && !props.embedded) void connectionStore.load().catch(() => undefined)
+    pendingPassword = undefined
     path.value = result.homePath
     pathInput.value = result.homePath
     transfers.value = await remoteApi.value.listTransfers(result.sessionId)
     await refresh()
   } catch (error) {
+    pendingPassword = undefined
+    if (props.protocol !== 'ftp') sshPassword.forget(props.connectionId)
     if (!disposed && connectionStatus.value === 'connecting') statusTracker.finish('error')
     errorMessage.value = error instanceof Error ? error.message : t('sftpUnavailable')
   } finally {
     loading.value = false
+    connecting = false
   }
 }
 
@@ -454,6 +485,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposed = true
+  pendingPassword = undefined
   const currentSession = sessionId.value
   statusTracker.finish('closed')
   if (refreshTimer) clearTimeout(refreshTimer)

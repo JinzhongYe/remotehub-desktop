@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import SshPasswordDialog from './components/SshPasswordDialog.vue'
 import { confirmDialog } from './dialog'
 import { t } from './i18n'
+import { useSshPasswordStore } from './stores/ssh-password'
 
 let removeCloseListener: (() => void) | undefined
 let closePromptOpen = false
+const sshPassword = useSshPasswordStore()
 
 onMounted(() => {
   removeCloseListener = window.api.app.onCloseRequest(async () => {
@@ -20,4 +23,15 @@ onMounted(() => {
 onUnmounted(() => removeCloseListener?.())
 </script>
 
-<template><RouterView /><ConfirmDialog /></template>
+<template>
+  <RouterView />
+  <ConfirmDialog />
+  <SshPasswordDialog
+    v-if="sshPassword.activePrompt"
+    :key="sshPassword.activePrompt.connectionId"
+    :name="sshPassword.activePrompt.label"
+    @submit="sshPassword.submit"
+    @cancel="sshPassword.cancel"
+    @timeout="sshPassword.timeout"
+  />
+</template>

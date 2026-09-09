@@ -7,7 +7,7 @@ import type { Readable, Writable } from 'node:stream'
 import type { Connection } from '../../shared/types'
 import type { SessionConnectionStatusEvent, TabConnectionStatus } from '../../shared/connection-status'
 import { joinRemotePath, normalizeRemotePath, type SftpConnectResult, type SftpEntry, type SftpEntryType, type SftpQueueResult, type SftpTransferConflict, type SftpTransferEvent, type SftpTransferItem } from '../../shared/sftp'
-import { sshErrorCode } from '../../shared/ssh'
+import { sshErrorCode, type SshPasswordOptions } from '../../shared/ssh'
 import { CredentialService } from './credentials'
 import { fingerprintHostKey, hostKeyState } from './host-key'
 import { appError, StorageService } from './storage'
@@ -56,9 +56,9 @@ export class SftpService {
     this.transfers = new TransferManager((item) => this.emit(item), 2)
   }
 
-  async connect(connection: Connection): Promise<SftpConnectResult> {
+  async connect(connection: Connection, options?: SshPasswordOptions): Promise<SftpConnectResult> {
     if (connection.type !== 'ssh') throw appError('SFTP_CONNECTION_INVALID', 'SFTP requires an SSH connection')
-    const credential = connection.authType === 'none' ? this.sessionPassword?.(connection) : this.credentials.get(connection.credentialId)
+    const credential = options?.password ?? (connection.authType === 'none' ? this.sessionPassword?.(connection) : this.credentials.get(connection.credentialId))
     if (!credential) throw appError('CREDENTIAL_MISSING', 'Save a password or private key before connecting')
     const client = this.createClient()
     let receivedHostKey: string | undefined
@@ -86,6 +86,15 @@ export class SftpService {
           sftp.realpath('.', (pathError, homePath) => {
             if (pathError) return fail(pathError)
             if (settled) return
+            if (options?.savePassword) {
+              try {
+                const latest = this.storage.getConnection(connection.id)
+                if (latest) {
+                  const credentialId = this.credentials.save(latest.name, credential, latest.credentialId)
+                  this.storage.saveConnection({ ...latest, authType: 'password', credentialId })
+                }
+              } catch (saveError) { fail(saveError); return }
+            }
             settled = true
             const sessionId = randomUUID()
             this.sessions.set(sessionId, { id: sessionId, connectionId: connection.id, client, sftp })
@@ -120,7 +129,7 @@ export class SftpService {
             receivedHostKey = fingerprintHostKey(key)
             return hostKeyState(connection.hostKeyFingerprint, receivedHostKey) === 'trusted'
           },
-          ...(connection.authType === 'privateKey' ? { privateKey: credential } : { password: credential })
+          ...(!options && connection.authType === 'privateKey' ? { privateKey: credential } : { password: credential })
         })
       } catch (error) { fail(error) }
     })

@@ -171,6 +171,10 @@ export class SshService {
     return [...this.sessions.values()].find((session) => session.connectionId === connection.id && session.target === target && session.stream)?.temporaryPassword
   }
 
+  hasTemporaryPassword(connection: Connection): boolean {
+    return Boolean(this.temporaryPassword(connection))
+  }
+
   trustHostKey(connectionId: string, fingerprint: string): void {
     if (this.storage.getConnection(connectionId)?.hostKeyFingerprint === fingerprint) return
     if (typeof connectionId !== 'string' || connectionId.length > 100 || this.pendingHostKeys.get(connectionId) !== fingerprint) {
