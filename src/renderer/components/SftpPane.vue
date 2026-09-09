@@ -480,9 +480,17 @@ function closeEntryMenu(): void {
         <button class="toolbar-button sftp-responsive-action primary-transfer" :title="t('upload')" :aria-label="t('upload')" :disabled="!sessionId" @click="chooseUploadFiles"><UiIcon name="upload" /> <span>{{ t('upload') }}</span></button>
         <button class="toolbar-button sftp-responsive-action" :title="t('uploadFolder')" :aria-label="t('uploadFolder')" :disabled="!sessionId" @click="chooseUploadFolder"><UiIcon name="folderUpload" /> <span>{{ t('uploadFolder') }}</span></button>
         <button class="toolbar-button sftp-responsive-action" :title="t('newFolder')" :aria-label="t('newFolder')" :disabled="!sessionId" @click="createDirectory"><UiIcon name="folderPlus" /> <span>{{ t('newFolder') }}</span></button>
-        <details v-if="embedded" class="sftp-layout-menu">
-          <summary :title="t('sftpLayout')" :aria-label="t('sftpLayout')"><UiIcon name="more" /></summary>
-          <div><button :class="{ active: position === 'left' }" @click="setPosition('left', $event)"><UiIcon name="arrowLeft" /> {{ t('dockLeft') }}</button><button :class="{ active: position === 'right' }" @click="setPosition('right', $event)"><UiIcon name="arrowRight" /> {{ t('dockRight') }}</button><button :class="{ active: position === 'top' }" @click="setPosition('top', $event)"><UiIcon name="arrowUp" /> {{ t('dockTop') }}</button><button :class="{ active: position === 'bottom' }" @click="setPosition('bottom', $event)"><UiIcon name="arrowDown" /> {{ t('dockBottom') }}</button></div>
+        <details class="sftp-layout-menu">
+          <summary :title="t('actions')" :aria-label="t('actions')"><UiIcon name="more" /></summary>
+          <div @click="($event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')">
+            <button v-if="!pendingFingerprint && (connectionStatus === 'closed' || connectionStatus === 'error')" @click="connect"><UiIcon name="refresh" /> {{ t('reconnect') }}</button>
+            <button :disabled="!sessionId" @click="chooseUploadFiles"><UiIcon name="upload" /> {{ t('upload') }}</button>
+            <button :disabled="!sessionId" @click="chooseUploadFolder"><UiIcon name="folderUpload" /> {{ t('uploadFolder') }}</button>
+            <button :disabled="!sessionId" @click="createDirectory"><UiIcon name="folderPlus" /> {{ t('newFolder') }}</button>
+            <template v-if="embedded">
+<button :class="{ active: position === 'left' }" @click="setPosition('left', $event)"><UiIcon name="arrowLeft" /> {{ t('dockLeft') }}</button><button :class="{ active: position === 'right' }" @click="setPosition('right', $event)"><UiIcon name="arrowRight" /> {{ t('dockRight') }}</button><button :class="{ active: position === 'top' }" @click="setPosition('top', $event)"><UiIcon name="arrowUp" /> {{ t('dockTop') }}</button><button :class="{ active: position === 'bottom' }" @click="setPosition('bottom', $event)"><UiIcon name="arrowDown" /> {{ t('dockBottom') }}</button>
+            </template>
+          </div>
         </details>
       </div>
     </div>
