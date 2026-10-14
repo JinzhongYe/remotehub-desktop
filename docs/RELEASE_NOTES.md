@@ -21,7 +21,7 @@
 - Android 7.0+ ARM64：`android-arm64-test.apk`，测试签名、应用 ID `com.cbgif.remotehub.debug`，页面内置，无需电脑开发服务。
 - Windows x64：`win-x64-setup.exe` 为安装版，`win-x64-portable.exe` 为免安装版。
 - macOS Intel：`mac-x64.dmg`；Apple Silicon：`mac-arm64.dmg`。
-- Linux x64：`linux-x64.AppImage`。
+- Linux x64：`linux-x86_64.AppImage`。
 - 安装包自带运行时，无需另装 Node.js、npm 或 pnpm。
 
 ## 检查与限制
