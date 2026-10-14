@@ -54,7 +54,9 @@ describe('Phase 10 release contracts', () => {
 
   it('requires all packaged smoke tests before publishing a preview', () => {
     const workflow = read('.github/workflows/release.yml')
-    expect(workflow).toContain('needs: build')
+    expect(workflow).toContain('needs: [build, android]')
+    expect(workflow).toContain('release/*.apk')
+    expect(workflow).toContain('--features custom-protocol')
     expect(workflow).toContain('npm run test:packaged')
     expect(workflow).toContain('--verify-tag --prerelease')
     expect(workflow).toContain('macos-15-intel')
