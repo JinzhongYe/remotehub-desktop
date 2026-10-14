@@ -1,8 +1,10 @@
-# RemoteHub 0.1.0-beta.10
+# RemoteHub 0.1.0-beta.11
 
 本次预发布合并上游 beta.10，并加入 Android/iOS 移动适配。下载产物由 GitHub Actions 构建，本次发布没有在本地执行检查或打包。
 
 ## 本次更新
+
+- 修复云端 Android SDK 安装：不再请求已移除的旧 `tools` 包。beta.10 发布构建未完成，保留原标签，以 beta.11 重新发布。
 
 - 增加 Tokyo Night、Tokyo Storm、Tokyo Light；手机通过顶部图标菜单选择主题。
 - 修复 Android 状态栏和刘海遮挡。移动端缩小图标与按钮外框，保留至少 44px 点击区域。

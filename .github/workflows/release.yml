@@ -100,6 +100,8 @@ jobs:
           toolchain: '1.98.1'
           targets: aarch64-linux-android
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - name: Install Android SDK and NDK
         run: |
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0' "ndk;$NDK_VERSION"

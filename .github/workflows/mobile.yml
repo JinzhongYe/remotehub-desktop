@@ -29,6 +29,8 @@ jobs:
           toolchain: '1.98.1'
           targets: aarch64-linux-android
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973'
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Restore persistent test signing key
