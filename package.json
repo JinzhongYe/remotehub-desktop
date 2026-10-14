@@ -4,10 +4,10 @@
   "private": true,
   "description": "Cross-platform SSH, SFTP, FTP and database workbench",
   "author": "cb-gif",
-  "homepage": "https://github.com/cb-gif/remotehub-desktop",
+  "homepage": "https://github.com/JinzhongYe/remotehub-desktop",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cb-gif/remotehub-desktop.git"
+    "url": "https://github.com/JinzhongYe/remotehub-desktop.git"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -16,10 +16,15 @@
   "type": "commonjs",
   "scripts": {
     "postinstall": "node scripts/rebuild-native.mjs",
+    "web:dev": "vite --configLoader native",
+    "web:build": "vite build --configLoader native",
     "dev": "npm run build && concurrently -k \"vite preview --configLoader native --host 127.0.0.1 --port 5173\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
-    "build": "vite build --configLoader native && tsc -p tsconfig.node.json",
+    "tauri": "tauri",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "build": "npm run web:build && tsc -p tsconfig.node.json",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron --ignore-pattern src-tauri/target --ignore-pattern .agents",
     "test": "node scripts/run-tests.mjs",
     "start": "electron .",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
@@ -30,13 +35,16 @@
     "test:packaged": "node scripts/smoke-packaged.mjs",
     "test:ssh-load": "npm run build && node scripts/smoke-ssh-load.mjs",
     "release:checksums": "node scripts/release-checksums.mjs",
-    "release:verify": "node scripts/verify-release.mjs"
+    "release:verify": "node scripts/verify-release.mjs",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build"
   },
   "dependencies": {
     "@codemirror/lang-sql": "^6.8.0",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "@fontsource/noto-sans-sc": "^5.2.8",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.3",
     "basic-ftp": "^6.2.1",
     "better-sqlite3": "^13.0.3",
     "codemirror": "^6.0.1",
@@ -54,6 +62,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",
+    "@tauri-apps/cli": "2.11.4",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.5",
     "@types/pg": "^8.23.1",

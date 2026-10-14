@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 
 const directory = resolve(process.argv[2] || 'release')
 const files = readdirSync(directory, { withFileTypes: true })
-  .filter((entry) => entry.isFile() && /\.(exe|dmg|AppImage)$/.test(entry.name))
+  .filter((entry) => entry.isFile() && /\.(exe|dmg|AppImage|apk)$/.test(entry.name))
   .map((entry) => entry.name).sort()
 if (!files.length) throw new Error('No release installers found')
 const lines = []

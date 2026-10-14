@@ -208,3 +208,13 @@
 :root[data-theme^='tokyo-'] .schema-node > button > i { color: var(--tn-green); background: color-mix(in srgb, var(--tn-green) 10%, transparent); }
 
 :root[data-theme^='tokyo-'] .theme-select { color: var(--ui-text); background: var(--component-button); border-color: var(--ui-divider-soft); }
+
+@media (max-width: 700px), (pointer: coarse) {
+  /* Theme colors must not restore the full-size mobile button background. */
+  :root[data-theme^='tokyo-'] .toolbar-button,
+  :root[data-theme^='tokyo-'] .toolbar-button:hover:not(:disabled),
+  :root[data-theme^='tokyo-'] .toolbar-button:active:not(:disabled),
+  :root[data-theme^='tokyo-'] .terminal-toolbar .toolbar-button.active {
+    border: 0; background: transparent;
+  }
+}

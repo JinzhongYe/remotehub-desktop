@@ -2,17 +2,20 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SshPasswordOptions } from '../../shared/ssh'
 import { t } from '../i18n'
+import { useMobileBackLayer } from '../mobile-back'
+import { useModalDialog } from '../modal-dialog'
 
 const props = defineProps<{ name: string; protocol: 'ssh' | 'sftp' }>()
 const emit = defineEmits<{ submit: [options: SshPasswordOptions]; cancel: []; timeout: [] }>()
 const title = computed(() => t(props.protocol === 'sftp' ? 'sftpPasswordPrompt' : 'sshPasswordPrompt'))
 const password = ref('')
 const savePassword = ref(false)
-const input = ref<HTMLInputElement | null>(null)
+const modal = useModalDialog()
 const remaining = ref(60)
 let timer: ReturnType<typeof setInterval> | undefined
 let deadline = 0
 let finished = false
+useMobileBackLayer(() => !finished, () => finish('cancel'))
 function finish(kind: 'submit' | 'cancel' | 'timeout'): void {
   if (finished) return
   if (kind === 'submit' && Date.now() >= deadline) kind = 'timeout'
@@ -26,7 +29,6 @@ function finish(kind: 'submit' | 'cancel' | 'timeout'): void {
 }
 onMounted(() => {
   deadline = Date.now() + 60000
-  input.value?.focus()
   timer = setInterval(() => {
     remaining.value = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
     if (!remaining.value) finish('timeout')
@@ -37,16 +39,16 @@ onBeforeUnmount(() => { clearInterval(timer); password.value = '' })
 
 <template>
   <Teleport to="body">
-    <div class="modal-layer" @keydown.esc.stop.prevent="finish('cancel')">
-      <form class="connection-dialog ssh-password-dialog" role="dialog" aria-modal="true" :aria-label="title" @submit.prevent="finish('submit')">
+    <dialog ref="modal" class="modal-layer" :aria-label="title" @cancel.prevent="finish('cancel')">
+      <form class="connection-dialog ssh-password-dialog" @submit.prevent="finish('submit')">
         <h2>{{ title }}</h2>
         <p>{{ name }}</p>
-        <label class="field"><span>{{ t('credential') }}</span><input ref="input" v-model="password" type="password" required maxlength="16384" autocomplete="current-password"></label>
+        <label class="field"><span>{{ t('credential') }}</span><input v-model="password" type="password" required maxlength="16384" autocomplete="current-password" autofocus></label>
         <label class="checkbox"><input v-model="savePassword" type="checkbox"> {{ t('saveSshPassword') }}</label>
         <p role="status">{{ t('sshPasswordCountdown', { seconds: remaining }) }}</p>
         <div class="dialog-actions"><button type="button" class="button secondary" @click="finish('cancel')">{{ t('cancel') }}</button><button class="button primary" type="submit">{{ t('sshAuthenticate') }}</button></div>
       </form>
-    </div>
+    </dialog>
   </Teleport>
 </template>
 

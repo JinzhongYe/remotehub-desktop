@@ -87,6 +87,8 @@ describe('Phase 7 PostgreSQL adapter', () => {
     }
     const close = vi.fn()
     const adapter: DatabaseAdapter = {
+      applyChanges: async () => undefined,
+      listTableDetails: async () => ({ columns: [], rows: [], hasMore: false }),
       type: 'postgres', database: 'public', serverVersion: 'PostgreSQL 17', ping: async () => undefined,
       listDatabases: async () => [], useDatabase: async () => undefined, listTables: async () => [], listColumns: async () => [],
       query: async () => ({ kind: 'rows', columns: [], rows: [], page: 0, pageSize: 200, hasMore: false, affectedRows: 0, changedRows: 0, warningStatus: 0, durationMs: 1, statement: 'SELECT' }), close

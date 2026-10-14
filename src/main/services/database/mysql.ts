@@ -1,6 +1,9 @@
 import { createConnection, type Connection as MysqlConnection, type FieldPacket, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise'
 import type { DatabaseCatalog, DatabaseCell, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseResultColumn, DatabaseTable } from '../../../shared/database'
 import { databaseStatement, isPageableStatement, normalizeQueryRequest } from '../../../shared/database'
+import type { DatabaseChangesRequest } from '../../../shared/database'
+import type { DatabaseSchemaSection, DatabaseTableDetails } from '../../../shared/database'
+import { databaseSchemaQuery } from '../../../shared/database-schema'
 import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseStatusEvent } from './adapter'
 import { DatabaseLifecycle } from './lifecycle'
 
@@ -19,6 +22,7 @@ export const mysqlAdapterFactory: DatabaseAdapterFactory = {
         password: password || '',
         database: connection.database,
         charset: 'utf8mb4',
+        ssl: connection.databaseSslMode && connection.databaseSslMode !== 'disable' ? { rejectUnauthorized: connection.databaseSslMode === 'verify-full', verifyIdentity: connection.databaseSslMode === 'verify-full' } : undefined,
         connectTimeout: 10_000,
         dateStrings: true,
         decimalNumbers: false,
@@ -40,6 +44,8 @@ export class MysqlAdapter implements DatabaseAdapter {
   readonly type = 'mysql' as const
   private readonly lifecycle = new DatabaseLifecycle()
   private closed = false
+  private transactionOpen = false
+  private autoCommit = true
 
   constructor(private readonly client: MysqlConnection, public database: string | undefined, public readonly serverVersion: string) {
     client.on('error', (error: Error) => { if (!this.closed) this.operationError(error) })
@@ -118,6 +124,15 @@ export class MysqlAdapter implements DatabaseAdapter {
     } catch (error) { throw this.operationError(error) }
   }
 
+  async listTableDetails(database: string, table: string, section: DatabaseSchemaSection): Promise<DatabaseTableDetails> {
+    const query = databaseSchemaQuery(this.type, database, table, section)
+    try {
+      const [result] = await this.client.execute({ sql: query.sql, rowsAsArray: true, timeout: QUERY_TIMEOUT_MS }, query.values)
+      const rows = asRows(result)
+      return { columns: query.columns, rows: rows.slice(0, 5000).map((row) => row.slice(0, query.columns.length).map(serializeDatabaseValue)), hasMore: rows.length > 5000, notice: query.notice }
+    } catch (error) { throw this.operationError(error) }
+  }
+
   async query(input: DatabaseQueryRequest): Promise<DatabaseQueryResult> {
     const request = normalizeQueryRequest(input)
     const startedAt = Date.now()
@@ -145,6 +160,10 @@ export class MysqlAdapter implements DatabaseAdapter {
         }
       }
       const header = result as ResultSetHeader
+      if (header.serverStatus != null) {
+        this.transactionOpen = Boolean(header.serverStatus & 1)
+        this.autoCommit = Boolean(header.serverStatus & 2)
+      }
       return {
         kind: 'mutation',
         columns: [],
@@ -160,6 +179,31 @@ export class MysqlAdapter implements DatabaseAdapter {
         statement
       }
     } catch (error) { throw this.operationError(error) }
+  }
+
+  async applyChanges(request: DatabaseChangesRequest): Promise<void> {
+    if (this.transactionOpen || !this.autoCommit) throw databaseError('DATABASE_TRANSACTION_ACTIVE', 'Commit or roll back the SQL editor transaction before saving table changes')
+    let started = false
+    let committing = false
+    try {
+      const [engines] = await this.client.execute({ sql: 'SELECT e.TRANSACTIONS FROM information_schema.TABLES t JOIN information_schema.ENGINES e ON e.ENGINE = t.ENGINE WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ?', rowsAsArray: true, timeout: QUERY_TIMEOUT_MS }, [request.database, request.table])
+      if (asRows(engines)[0]?.[0] !== 'YES') throw databaseError('DATABASE_TRANSACTION_UNAVAILABLE', 'This table does not support transactions; use the SQL editor to change it')
+      await this.client.query({ sql: 'START TRANSACTION', timeout: QUERY_TIMEOUT_MS })
+      started = true
+      for (const sql of request.statements) await this.client.execute({ sql, timeout: QUERY_TIMEOUT_MS })
+      committing = true
+      await this.client.query({ sql: 'COMMIT', timeout: QUERY_TIMEOUT_MS })
+    } catch (error) {
+      if (committing) {
+        this.close()
+        throw databaseError('DATABASE_TRANSACTION_COMMIT_FAILED', 'Commit failed; check the saved data before reconnecting and retrying')
+      }
+      if (started) {
+        try { await this.client.query({ sql: 'ROLLBACK', timeout: QUERY_TIMEOUT_MS }) }
+        catch { this.close() }
+      }
+      throw this.operationError(error)
+    }
   }
 
   close(): void {

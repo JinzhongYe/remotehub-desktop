@@ -42,6 +42,21 @@ npm run dev
 
 Windows 也可以双击 `start.bat`；它会检查 Node.js / npm，并在首次运行或缺少串口组件时自动更新依赖。macOS 可直接在 Terminal 使用上述命令，并支持 `⌘K` 搜索和 `⌘N` 新建连接；Windows/Linux 对应 `Ctrl+K` 和 `Ctrl+N`。
 
+### Android 开发预览
+
+Android 预览需要 Rust stable、JDK 17–21，以及 Android SDK Platform、Platform-Tools、Build-Tools、Command-line Tools 和 NDK。配置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 后，首次生成 Android 工程并启动模拟器：
+
+```powershell
+npm run tauri -- android init
+npm run android:dev
+```
+
+当前 Android 版本支持本地连接/分组管理、密码或 Private Key（含 passphrase）的 SSH 终端、基于当前 SSH 会话的 SFTP，以及 PostgreSQL/MySQL 数据库工作区；首次 SSH 连接会要求确认 SHA-256 Host Key。数据库支持认证测试、库/表/字段浏览、查询分页、写操作和当前页 CSV 导出。凭据通过 AndroidKeyStore 加密，连接元数据不保存明文。Android 暂不支持 SQLite、数据库 SSH 隧道、SFTP 文件夹传输及传输控制，Codex 状态仍未接入。手机和平板已加入抽屉、单页工作区、文件操作菜单和终端辅助键；本轮修改尚未验证，Tauri 不会启动 Electron。
+
+### iOS 开发入口
+
+已生成 `src-tauri/gen/apple/remotehub.xcodeproj`，并接入共享 Tauri 服务、iOS Keychain、原生剪贴板和系统文档导出。使用 `npm run ios:dev` 启动；真机需要自己的 Apple 开发团队与签名配置。本轮未构建或测试 iOS，支持范围和待测项目见 [移动端修改说明](docs/mobile-changes.md)。
+
 SSH 连接保存后，单击连接打开终端；连接行上的 `⇄` 按钮打开 SFTP。可以选择或拖入文件与文件夹，下载远程目录时会保留目录结构；同名文件会先集中确认，传输队列支持暂停、继续、取消和重试。串口连接选择 `Serial / 串口` 类型，选取 `COM3`、`/dev/ttyUSB0` 等设备并填写波特率。
 
 传输任务属于当前 SFTP 标签：关闭标签或断开连接会取消未完成任务。失败或取消的传输可能留下不完整目标文件，点击“重试”会从头覆盖该文件。
@@ -89,7 +104,9 @@ npm start
 - `dist/`：Vue 渲染进程静态资源
 - `dist-electron/`：Electron Main / preload 编译产物
 
-P10 已接入 electron-builder：Windows 安装版/免安装版 EXE、macOS Intel/Apple Silicon DMG、Linux x64 AppImage。发布包自带运行时，不需要 Node.js；下载入口为 [GitHub Releases](https://github.com/cb-gif/remotehub-desktop/releases)。首版是未完成签名与真实设备全量验收的 beta 预发布。
+`npm run web:build` 只生成共享 Renderer，供 Tauri Android 使用。
+
+P10 已接入 electron-builder：Windows 安装版/免安装版 EXE、macOS Intel/Apple Silicon DMG、Linux x64 AppImage。发布包自带运行时，不需要 Node.js；下载入口为 [GitHub Releases](https://github.com/JinzhongYe/remotehub-desktop/releases)。首版是未完成签名与真实设备全量验收的 beta 预发布。
 
 在对应操作系统执行 `npm run dist:win`、`npm run dist:mac` 或 `npm run dist:linux`，产物位于 `release/`。可用 `npm run test:packaged` 检查打包程序的离线启动、IPC、SQLite 查询与串口模块。详细命令、自动发布流程和验收清单见 [发布说明](docs/RELEASING.md)。
 
@@ -101,3 +118,9 @@ P10 已接入 electron-builder：Windows 安装版/免安装版 EXE、macOS Inte
 
 - [架构说明](docs/ARCHITECTURE.md)
 - [开发路线图](docs/ROADMAP.md)
+
+## 本仓库的移动端与云端发布
+
+本仓库基于 [cb-gif/remotehub-desktop](https://github.com/cb-gif/remotehub-desktop)，合并上游 beta.10 并维护 Android/iOS 适配。GitHub 标签发布同时提供 Android ARM64 测试 APK、Windows x64、macOS Intel/ARM64 和 Linux x64 安装包；iOS 工程随源码提供，本次没有 IPA。检查和打包由 GitHub Actions 执行。
+
+Android 页面内置，最低 Android 7.0；保留状态栏/刘海安全区域、小尺寸按钮与连接标签栏。APK 使用固定测试签名及 `com.cbgif.remotehub.debug`，适合手动测试，不用于应用商店分发。移动端功能边界和验收项目见 [移动端修改说明](docs/mobile-changes.md)。

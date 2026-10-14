@@ -1,0 +1,11 @@
+[package]
+name = "tauri-plugin-remotehub-mobile"
+version = "0.1.0"
+edition = "2021"
+links = "remotehub-mobile"
+
+[dependencies]
+tauri = "2.11.3"
+
+[build-dependencies]
+tauri-plugin = { version = "2.6.3", features = ["build"] }

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseConnectResult, DatabaseQueryRequest, DatabaseQueryResult, DatabaseCatalog, DatabaseTable, DatabaseColumn } from '../../../shared/database'
+import { normalizeChangesRequest, type DatabaseChangesRequest } from '../../../shared/database'
+import type { DatabaseSchemaSection, DatabaseTableDetails } from '../../../shared/database'
 import type { Connection, ConnectionTestResult } from '../../../shared/types'
 import type { SessionConnectionStatusEvent } from '../../../shared/connection-status'
 import { CredentialService } from '../credentials'
@@ -69,28 +71,45 @@ export class DatabaseService {
   }
 
   listDatabases(sessionId: string): Promise<DatabaseCatalog[]> {
-    return this.getSession(sessionId).adapter.listDatabases()
+    return this.run(sessionId, (adapter) => adapter.listDatabases())
   }
 
   async useDatabase(sessionId: string, database: string): Promise<{ database: string }> {
-    const session = this.getSession(sessionId)
-    await session.adapter.useDatabase(database)
-    return { database: session.adapter.database || database }
+    return this.run(sessionId, async (adapter) => {
+      await adapter.useDatabase(database)
+      return { database: adapter.database || database }
+    })
   }
 
   listTables(sessionId: string, database: string): Promise<DatabaseTable[]> {
-    return this.getSession(sessionId).adapter.listTables(database)
+    return this.run(sessionId, (adapter) => adapter.listTables(database))
   }
 
   listColumns(sessionId: string, database: string, table: string): Promise<DatabaseColumn[]> {
-    return this.getSession(sessionId).adapter.listColumns(database, table)
+    return this.run(sessionId, (adapter) => adapter.listColumns(database, table))
   }
 
   async query(sessionId: string, request: DatabaseQueryRequest): Promise<DatabaseQueryResult> {
+    return this.run(sessionId, (adapter) => adapter.query(request))
+  }
+
+  listTableDetails(sessionId: string, database: string, table: string, section: DatabaseSchemaSection): Promise<DatabaseTableDetails> {
+    return this.run(sessionId, (adapter) => adapter.listTableDetails(database, table, section))
+  }
+
+  async applyChanges(sessionId: string, request: DatabaseChangesRequest): Promise<{ ok: true }> {
+    const normalized = normalizeChangesRequest(request)
+    return this.run(sessionId, async (adapter) => {
+      await adapter.applyChanges(normalized)
+      return { ok: true }
+    })
+  }
+
+  private async run<T>(sessionId: string, operation: (adapter: DatabaseAdapter) => Promise<T>): Promise<T> {
     const session = this.getSession(sessionId)
     if (session.busy) throw appError('DATABASE_BUSY', 'Another query is still running in this workspace')
     session.busy = true
-    try { return await session.adapter.query(request) } finally { session.busy = false }
+    try { return await operation(session.adapter) } finally { session.busy = false }
   }
 
   disconnect(sessionId: string): void {

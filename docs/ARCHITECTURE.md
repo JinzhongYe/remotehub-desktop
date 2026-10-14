@@ -10,7 +10,13 @@ RemoteHub Desktop 是一个本地优先的跨平台开发运维工作台，围�
 Vue Renderer
   ├─ Components / Views
   ├─ Pinia stores（只保存可序列化状态）
-  └─ window.api（preload 暴露的白名单 IPC）
+  └─ Domain services
+          │
+          ▼
+    Platform adapter
+          │
+          ▼
+    window.api（preload 暴露的白名单 IPC）
           │
           ▼
 Electron Main
@@ -23,6 +29,12 @@ Electron Main
 ```
 
 Renderer 禁止直接访问 `fs`、`ssh2`、数据库驱动、私钥和密码。Main 进程只通过明确的 IPC 通道接收已校验的参数，并返回可序列化数据或标准化错误。
+
+Renderer 运行时代码也不直接访问 `window.api`。`src/services` 暴露领域入口，`src/platform` 根据运行环境选择满足 `RemoteHubPlatform` 契约的平台 Adapter。Electron Adapter 保留全部现有能力；Tauri Adapter 接入 Android 的连接、SSH 和 SFTP Provider，并通过 `PlatformCapabilities` 关闭其余未实现入口。
+
+## Android/Tauri 壳
+
+`src-tauri` 是独立的 Tauri 2 运行层，开发时加载 5173 端口的 Vite 服务，构建时加载 `dist/`。它通过 Rust command/event 和小型 Kotlin 平台插件承载 Android 能力，不复制 Electron Main、IPC 或 Node 原生模块；主题、语言与业务 UI 仍由共享 Renderer 管理。
 
 ## IPC 设计
 
@@ -142,3 +154,15 @@ PostgreSQL SQL Tab 复用数据库 UI，把 Schema 映射为结构 Explorer 的�
 ## Phase 8 运行路径
 
 SQLite 连接资产以 `host` 保存用户选择的绝对本地文件路径，不保存凭据。Main 进程通过为 Electron ABI 重建的 `better-sqlite3` 以只读模式打开文件，Explorer 读取 `sqlite_schema` 与 `PRAGMA table_info`，查询层只执行 `reader` 语句并复用受控分页。Renderer 只持有序列化结果；当前页 CSV 经过大小和行列校验后，由 Main 进程写入用户在系统保存对话框中选择的位置。
+
+## Android Phase 4 运行路径
+
+Android Renderer 继续调用共享 `sshService`，Tauri Provider 将连接、分组和 SSH 操作映射为 Rust commands/events。Rust 使用 JSON 原子写入保存非敏感元数据，密码、私钥与 passphrase 由 Kotlin 插件使用 AndroidKeyStore AES-GCM 加密；Rust `russh` 会话负责 Host Key 固定、PTY、输入输出、resize、exec 和断开。能力声明会隐藏尚未实现的 SFTP、数据库、串口、本地 Shell、导入导出与 Codex 状态入口。
+
+## Android Phase 6 运行路径
+
+Android SFTP 复用已认证的 `russh` 连接并通过 `russh-sftp` 打开 subsystem，不重复登录。远程目录、文本编辑和文件传输由 Rust command/event 驱动；系统文档选择器选中的上传文件先复制到应用缓存，下载则直接流入用户选择的 Android `content://` 目标。移动端能力声明隐藏本地文件面板、文件夹传输和尚未实现的传输控制。
+
+## Android Phase 7 运行路径
+
+Android 数据库标签继续使用共享 `DatabasePane` 和 `databaseService`，Tauri Provider 只负责命令与状态事件映射。Rust 通过 SQLx 的 PostgreSQL/MySQL 驱动持有每个标签的独立连接，从 AndroidKeyStore 读取密码，并完成认证测试、切库、结构浏览、30 秒查询超时和最多 500 行的受控分页；查询结果在进入 Renderer 前转换为 JSON 安全值。CSV 由共享格式化逻辑生成，再写入系统文档选择器返回的 `content://` 目标。SQLite 和数据库 SSH 隧道没有暴露在 Android 能力声明中。

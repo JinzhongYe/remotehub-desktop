@@ -1,0 +1,70 @@
+{
+  "mysql": {
+    "indexes": {
+      "columns": ["name", "uniqueIndex", "indexType", "columnPosition", "fields", "indexOrder", "indexPrefix", "comment"],
+      "sql": "SELECT INDEX_NAME, (NON_UNIQUE = 0), INDEX_TYPE, SEQ_IN_INDEX, COLUMN_NAME, COLLATION, SUB_PART, INDEX_COMMENT FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY INDEX_NAME, SEQ_IN_INDEX LIMIT 5001"
+    },
+    "foreignKeys": {
+      "columns": ["name", "columnPosition", "fields", "referencedSchema", "referencedTable", "referencedColumn", "onUpdate", "onDelete"],
+      "sql": "SELECT k.CONSTRAINT_NAME, k.ORDINAL_POSITION, k.COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.UPDATE_RULE, r.DELETE_RULE FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION LIMIT 5001"
+    },
+    "checks": {
+      "columns": ["name", "definition", "enforced"],
+      "sql": "SELECT t.CONSTRAINT_NAME, c.CHECK_CLAUSE, t.ENFORCED FROM information_schema.TABLE_CONSTRAINTS t JOIN information_schema.CHECK_CONSTRAINTS c ON c.CONSTRAINT_SCHEMA = t.CONSTRAINT_SCHEMA AND c.CONSTRAINT_NAME = t.CONSTRAINT_NAME WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ? AND t.CONSTRAINT_TYPE = 'CHECK' ORDER BY t.CONSTRAINT_NAME LIMIT 5001"
+    },
+    "triggers": {
+      "columns": ["name", "triggerTiming", "triggerEvent", "definition"],
+      "sql": "SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ? ORDER BY TRIGGER_NAME LIMIT 5001"
+    },
+    "advanced": {
+      "columns": ["name", "definition"],
+      "sql": "SHOW CREATE TABLE {{database}}.{{table}}",
+      "parameters": false
+    }
+  },
+  "postgres": {
+    "indexes": {
+      "columns": ["name", "uniqueIndex", "primaryKey", "validated", "definition"],
+      "sql": "SELECT i.relname::text, x.indisunique, x.indisprimary, x.indisvalid, pg_catalog.pg_get_indexdef(i.oid) FROM pg_catalog.pg_index x JOIN pg_catalog.pg_class t ON t.oid = x.indrelid JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace JOIN pg_catalog.pg_class i ON i.oid = x.indexrelid WHERE n.nspname = $1 AND t.relname = $2 ORDER BY i.relname LIMIT 5001"
+    },
+    "foreignKeys": {
+      "columns": ["name", "definition", "validated", "deferrable"],
+      "sql": "SELECT c.conname::text, pg_catalog.pg_get_constraintdef(c.oid), c.convalidated, c.condeferrable FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_class t ON t.oid = c.conrelid JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'f' ORDER BY c.conname LIMIT 5001"
+    },
+    "checks": {
+      "columns": ["name", "definition", "validated"],
+      "sql": "SELECT c.conname::text, pg_catalog.pg_get_constraintdef(c.oid), c.convalidated FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_class t ON t.oid = c.conrelid JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'c' ORDER BY c.conname LIMIT 5001"
+    },
+    "triggers": {
+      "columns": ["name", "triggerEnabled", "definition"],
+      "sql": "SELECT g.tgname::text, CASE g.tgenabled WHEN 'O' THEN 'ORIGIN / LOCAL' WHEN 'D' THEN 'DISABLED' WHEN 'R' THEN 'REPLICA' WHEN 'A' THEN 'ALWAYS' END, pg_catalog.pg_get_triggerdef(g.oid) FROM pg_catalog.pg_trigger g JOIN pg_catalog.pg_class t ON t.oid = g.tgrelid JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = $1 AND t.relname = $2 AND NOT g.tgisinternal ORDER BY g.tgname LIMIT 5001"
+    },
+    "advanced": {
+      "columns": ["name", "type", "owner", "estimatedRows", "comment", "definition"],
+      "sql": "SELECT t.relname::text, CASE t.relkind WHEN 'r' THEN 'TABLE' WHEN 'p' THEN 'PARTITIONED TABLE' WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE t.relkind::text END, pg_catalog.pg_get_userbyid(t.relowner)::text, CASE WHEN t.reltuples >= 0 THEN t.reltuples::bigint ELSE NULL END, pg_catalog.obj_description(t.oid, 'pg_class'), CASE WHEN t.relkind IN ('v', 'm') THEN pg_catalog.pg_get_viewdef(t.oid) ELSE NULL END FROM pg_catalog.pg_class t JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = $1 AND t.relname = $2 AND t.relkind IN ('r', 'p', 'v', 'm') LIMIT 5001"
+    }
+  },
+  "sqlite": {
+    "indexes": {
+      "columns": ["name", "uniqueIndex", "indexOrigin", "partialIndex", "columnPosition", "fields", "descending", "collation", "definition"],
+      "sql": "WITH target(db, tbl) AS (VALUES (?, ?)) SELECT i.name, i.\"unique\", i.origin, i.partial, x.seqno + 1, CASE x.cid WHEN -2 THEN '<expression>' WHEN -1 THEN '<rowid>' ELSE x.name END, x.desc, x.coll, s.sql FROM target, pragma_index_list(target.tbl, target.db) i LEFT JOIN pragma_index_xinfo(i.name, target.db) x ON x.key = 1 LEFT JOIN {{database}}.sqlite_schema s ON s.type = 'index' AND s.name = i.name ORDER BY i.seq, x.seqno LIMIT 5001"
+    },
+    "foreignKeys": {
+      "columns": ["constraintId", "columnPosition", "fields", "referencedTable", "referencedColumn", "onUpdate", "onDelete", "matchType"],
+      "sql": "WITH target(db, tbl) AS (VALUES (?, ?)) SELECT f.id, f.seq + 1, f.\"from\", f.\"table\", f.\"to\", f.on_update, f.on_delete, f.match FROM target, pragma_foreign_key_list(target.tbl, target.db) f ORDER BY f.id, f.seq LIMIT 5001"
+    },
+    "checks": {
+      "columns": ["name", "definition"],
+      "sql": "SELECT name, sql FROM {{database}}.sqlite_schema WHERE ? IS NOT NULL AND name = ? AND type = 'table' LIMIT 5001",
+      "notice": "sqliteCheckDefinitions"
+    },
+    "triggers": {
+      "columns": ["name", "definition"],
+      "sql": "SELECT name, sql FROM {{database}}.sqlite_schema WHERE ? IS NOT NULL AND tbl_name = ? AND type = 'trigger' ORDER BY name LIMIT 5001"
+    },
+    "advanced": {
+      "columns": ["name", "type", "definition"],
+      "sql": "SELECT name, type, sql FROM {{database}}.sqlite_schema WHERE ? IS NOT NULL AND name = ? AND type IN ('table', 'view') LIMIT 5001"
+    }
+  }
+}

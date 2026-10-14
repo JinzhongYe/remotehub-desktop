@@ -4,6 +4,7 @@ import { computed } from 'vue'
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), { size: 16 })
 
 const icons: Record<string, string> = {
+  palette: 'M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1.4-3.4l-.2-.2A2 2 0 0 1 15.6 14H17a4 4 0 0 0 4-4c0-4-4-7-9-7ZM7 10h.01M10 7h.01M15 7h.01M17 10h.01',
   terminal: 'M5 7l4 4-4 4m7 0h7M4 3h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z',
   command: 'M5 8l4 4-4 4m7 0h7',
   transfer: 'M5 7h14m-4-4 4 4-4 4M19 17H5m4 4-4-4 4-4',
@@ -12,6 +13,7 @@ const icons: Record<string, string> = {
   layoutOne: 'M4 5h16v14H4V5Z',
   layoutTwo: 'M4 5h16v14H4V5Zm8 0v14',
   layoutFour: 'M4 5h16v14H4V5Zm8 0v14M4 12h16',
+  save: 'M5 3h12l4 4v14H3V3h2Zm2 0v7h10V3M7 21v-8h10v8',
   plus: 'M12 5v14M5 12h14',
   close: 'm6 6 12 12M18 6 6 18',
   pin: 'm9 3 6 6m-8 3 5 5m-3-8 6-6 6 6-6 6m-3 3-7 7',

@@ -1,7 +1,7 @@
 name: Validate source
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/Android']
   pull_request:
 permissions:
   contents: read

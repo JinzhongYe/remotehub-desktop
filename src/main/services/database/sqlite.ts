@@ -3,6 +3,9 @@ import { createRequire } from 'node:module'
 import type Database from 'better-sqlite3'
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseResultColumn, DatabaseTable } from '../../../shared/database'
 import { databaseStatement, isPageableStatement, normalizeQueryRequest } from '../../../shared/database'
+import type { DatabaseChangesRequest } from '../../../shared/database'
+import type { DatabaseSchemaSection, DatabaseTableDetails } from '../../../shared/database'
+import { databaseSchemaQuery } from '../../../shared/database-schema'
 import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseStatusEvent } from './adapter'
 import { DatabaseLifecycle } from './lifecycle'
 import { buildPagedMysqlQuery, serializeDatabaseValue } from './mysql'
@@ -81,6 +84,14 @@ export class SqliteAdapter implements DatabaseAdapter {
     } catch (error) { throw this.operationError(error) }
   }
 
+  async listTableDetails(database: string, table: string, section: DatabaseSchemaSection): Promise<DatabaseTableDetails> {
+    const query = databaseSchemaQuery(this.type, database, table, section)
+    try {
+      const rows = this.client.prepare(query.sql).raw(true).all(...query.values) as unknown[][]
+      return { columns: query.columns, rows: rows.slice(0, 5000).map((row) => row.map(serializeDatabaseValue)), hasMore: rows.length > 5000, notice: query.notice }
+    } catch (error) { throw this.operationError(error) }
+  }
+
   async query(input: DatabaseQueryRequest): Promise<DatabaseQueryResult> {
     const request = normalizeQueryRequest(input)
     const startedAt = Date.now()
@@ -107,6 +118,15 @@ export class SqliteAdapter implements DatabaseAdapter {
         kind: 'rows', columns, rows, page: pageable ? request.page : 0, pageSize: request.pageSize, hasMore,
         affectedRows: 0, changedRows: 0, warningStatus: 0, durationMs: Date.now() - startedAt, statement: statementName
       }
+    } catch (error) { throw this.operationError(error) }
+  }
+
+  async applyChanges(request: DatabaseChangesRequest): Promise<void> {
+    if (this.client.inTransaction) throw sqliteError('DATABASE_TRANSACTION_ACTIVE', 'Commit or roll back the SQL editor transaction before saving table changes')
+    try {
+      this.client.transaction(() => {
+        for (const sql of request.statements) this.client.prepare(sql).run()
+      })()
     } catch (error) { throw this.operationError(error) }
   }
 

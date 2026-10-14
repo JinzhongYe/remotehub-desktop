@@ -1,0 +1,35 @@
+[package]
+name = "remotehub"
+version = "0.1.0-beta.10"
+description = "Cross-platform SSH, SFTP, FTP and database workbench"
+authors = ["cb-gif"]
+license = ""
+repository = "https://github.com/JinzhongYe/remotehub-desktop.git"
+edition = "2021"
+rust-version = "1.89"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "remotehub_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+futures-util = "0.3"
+remotehub-mobile = { package = "tauri-plugin-remotehub-mobile", path = "plugins/mobile" }
+tauri = { version = "2.11.3", features = [] }
+russh = { version = "0.63.3", default-features = false, features = ["flate2", "ring", "rsa"] }
+russh-sftp = "3.0.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "mysql", "bigdecimal", "chrono", "json", "uuid"] }
+tauri-plugin-dialog = "2.7.3"
+tauri-plugin-fs = "2.5.2"
+tokio = { version = "1", features = ["fs", "io-util", "net", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }

@@ -46,7 +46,7 @@ describe('Database session lifecycle status', () => {
     expect(events.filter((event) => event.sessionId === second.sessionId)).toHaveLength(1)
     expect(clients[0].destroy).toHaveBeenCalledOnce()
     await expect(service.query(first.sessionId, { sql: 'SELECT 1' })).rejects.toMatchObject({ code: 'DATABASE_SESSION_NOT_FOUND' })
-    expect(() => service.listDatabases(first.sessionId)).toThrow('Database session is closed or missing')
+    await expect(service.listDatabases(first.sessionId)).rejects.toThrow('Database session is closed or missing')
 
     service.disconnect(first.sessionId)
     const count = events.length

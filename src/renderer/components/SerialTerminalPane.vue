@@ -8,6 +8,7 @@ import type { TabConnectionStatus } from '../../shared/connection-status'
 import { t } from '../i18n'
 import { loadTerminalFont, observeTerminalLayout } from '../terminal-layout'
 import { terminalTheme } from '../terminal-theme'
+import { serialService } from '../../services'
 
 const props = defineProps<{ connectionId: string; active: boolean }>()
 const emit = defineEmits<{ 'connection-status': [status: TabConnectionStatus] }>()
@@ -49,7 +50,7 @@ function fit(): void {
 }
 
 async function connect(): Promise<void> {
-  if (sessionId) await window.api.serial.disconnect(sessionId).catch(() => undefined)
+  if (sessionId) await serialService.disconnect(sessionId).catch(() => undefined)
   sessionId = ''
   status.value = 'connecting'
   statusMessage.value = ''
@@ -57,9 +58,9 @@ async function connect(): Promise<void> {
   pendingStatus.clear()
   terminal?.clear()
   try {
-    const result = await window.api.serial.connect(props.connectionId)
+    const result = await serialService.connect(props.connectionId)
     if (disposed) {
-      await window.api.serial.disconnect(result.sessionId).catch(() => undefined)
+      await serialService.disconnect(result.sessionId).catch(() => undefined)
       return
     }
     sessionId = result.sessionId
@@ -83,14 +84,14 @@ async function disconnect(): Promise<void> {
   if (!sessionId) return
   const current = sessionId
   sessionId = ''
-  await window.api.serial.disconnect(current).catch(() => undefined)
+  await serialService.disconnect(current).catch(() => undefined)
   status.value = 'closed'
 }
 
 onMounted(async () => {
   await loadTerminalFont(13)
   if (disposed || !terminalHost.value) return
-  terminal = new Terminal({ convertEol: true, cursorBlink: true, fontFamily: '"JetBrains Mono", "Noto Sans SC", serif', fontSize: 13, fontWeight: '400', fontWeightBold: '600', minimumContrastRatio: 4.5, theme: terminalTheme(), scrollback: 10000 })
+  terminal = new Terminal({ convertEol: true, cursorBlink: true, fontFamily: '"JetBrains Mono", "PingFang SC", "Microsoft YaHei", monospace', fontSize: 13, fontWeight: '400', fontWeightBold: '600', minimumContrastRatio: 4.5, theme: terminalTheme(), scrollback: 10000 })
   fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
   terminal.open(terminalHost.value)
@@ -99,10 +100,10 @@ onMounted(async () => {
   })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   terminalLayout = observeTerminalLayout(terminalHost.value, terminal, fitAddon)
-  removeDataListener = window.api.serial.onData(handleData)
-  removeStatusListener = window.api.serial.onStatus(handleStatus)
+  removeDataListener = serialService.onData(handleData)
+  removeStatusListener = serialService.onStatus(handleStatus)
   const input = terminal.onData((data) => {
-    if (sessionId) void window.api.serial.write(sessionId, data).catch((error) => {
+    if (sessionId) void serialService.write(sessionId, data).catch((error) => {
       status.value = 'error'
       statusMessage.value = error instanceof Error ? error.message : t('serialUnavailable')
     })
@@ -122,7 +123,7 @@ onBeforeUnmount(() => {
   removeInputListener?.()
   terminalLayout?.dispose()
   themeObserver?.disconnect()
-  if (sessionId) void window.api.serial.disconnect(sessionId).catch(() => undefined)
+  if (sessionId) void serialService.disconnect(sessionId).catch(() => undefined)
   terminal?.dispose()
 })
 </script>

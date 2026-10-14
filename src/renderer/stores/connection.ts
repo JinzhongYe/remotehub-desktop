@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Connection, ConnectionInput, ConnectionTestResult, Group } from '../../shared/types'
+import { connectionService, groupService } from '../../services'
 
 export const useConnectionStore = defineStore('connections', () => {
   const connections = ref<Connection[]>([])
@@ -23,7 +24,7 @@ export const useConnectionStore = defineStore('connections', () => {
   async function load(): Promise<void> {
     loading.value = true
     try {
-      const result = await window.api.connections.list()
+      const result = await connectionService.list()
       connections.value = result.connections
       groups.value = result.groups
       if (!selectedId.value && connections.value.length) selectedId.value = connections.value[0].id
@@ -32,8 +33,8 @@ export const useConnectionStore = defineStore('connections', () => {
     }
   }
 
-  async function save(input: ConnectionInput, credential?: string, clearCredential = false, privateKeyPath?: string): Promise<Connection> {
-    const item = await window.api.connections.save({ connection: input, credential, clearCredential, privateKeyPath })
+  async function save(input: ConnectionInput, credential?: string, clearCredential = false, privateKeyPath?: string, passphrase?: string, clearPassphrase = false): Promise<Connection> {
+    const item = await connectionService.save({ connection: input, credential, clearCredential, privateKeyPath, passphrase, clearPassphrase })
     const index = connections.value.findIndex((connection) => connection.id === item.id)
     if (index >= 0) connections.value[index] = item
     else connections.value.unshift(item)
@@ -42,19 +43,19 @@ export const useConnectionStore = defineStore('connections', () => {
   }
 
   async function duplicate(id: string): Promise<void> {
-    const item = await window.api.connections.duplicate(id)
+    const item = await connectionService.duplicate(id)
     connections.value.push(item)
     selectedId.value = item.id
   }
 
   async function importConnections(): Promise<{ canceled: boolean; count: number }> {
-    const result = await window.api.connections.import()
+    const result = await connectionService.import()
     if (!result.canceled) await load()
     return result
   }
 
   function exportConnections(): Promise<{ canceled: boolean; count: number }> {
-    return window.api.connections.export()
+    return connectionService.export()
   }
 
   async function move(id: string, beforeId?: string, groupId?: string): Promise<void> {
@@ -68,7 +69,7 @@ export const useConnectionStore = defineStore('connections', () => {
     items.splice(targetIndex < 0 ? items.length : targetIndex, 0, item)
     connections.value = items
     try {
-      connections.value = await window.api.connections.reorder(items.map((connection) => ({ id: connection.id, groupId: connection.groupId })))
+      connections.value = await connectionService.reorder(items.map((connection) => ({ id: connection.id, groupId: connection.groupId })))
     } catch (error) {
       connections.value = previous
       throw error
@@ -76,7 +77,7 @@ export const useConnectionStore = defineStore('connections', () => {
   }
 
   async function test(id: string): Promise<ConnectionTestResult> {
-    const result = await window.api.connections.test(id)
+    const result = await connectionService.test(id)
     if (result.ok) {
       const item = connections.value.find((connection) => connection.id === id)
       if (item) item.lastConnectedAt = result.testedAt
@@ -86,7 +87,7 @@ export const useConnectionStore = defineStore('connections', () => {
 
   async function saveGroup(name: string, id?: string): Promise<void> {
     await queueGroupMutation(async () => {
-      const group = await window.api.groups.save(name, id)
+      const group = await groupService.save(name, id)
       const index = groups.value.findIndex((item) => item.id === group.id)
       if (index >= 0) groups.value[index] = { ...group, sortOrder: groups.value[index].sortOrder }
       else groups.value.push(group)
@@ -95,7 +96,7 @@ export const useConnectionStore = defineStore('connections', () => {
 
   async function deleteGroup(id: string): Promise<void> {
     await queueGroupMutation(async () => {
-      await window.api.groups.delete(id)
+      await groupService.delete(id)
       groups.value = groups.value.filter((item) => item.id !== id)
       connections.value.forEach((item) => { if (item.groupId === id) item.groupId = undefined })
     })
@@ -135,7 +136,7 @@ export const useConnectionStore = defineStore('connections', () => {
     await queueGroupMutation(async () => {
       try {
         // Reconcile queued creates/deletes, and never let an older response erase a newer drag.
-        const result: Group[] = await window.api.groups.reorder(orderedGroups(requestedOrder).map((group) => group.id))
+        const result: Group[] = await groupService.reorder(orderedGroups(requestedOrder).map((group) => group.id))
         confirmedGroupOrder = result.map((group) => group.id)
         if (revision === groupMoveRevision) groups.value = orderedGroups(confirmedGroupOrder)
       } catch (error) {
@@ -148,7 +149,7 @@ export const useConnectionStore = defineStore('connections', () => {
   }
 
   async function remove(id: string): Promise<void> {
-    await window.api.connections.delete(id)
+    await connectionService.delete(id)
     connections.value = connections.value.filter((item) => item.id !== id)
     if (selectedId.value === id) selectedId.value = connections.value[0]?.id || null
   }

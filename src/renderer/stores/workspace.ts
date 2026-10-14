@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { storageService } from '../../services'
 
 export type WorkspaceTabType = 'welcome' | 'terminal' | 'sftp' | 'sql' | 'table'
 export type WorkspaceViewCount = 1 | 2 | 4
@@ -24,11 +25,12 @@ export interface WorkspaceTab {
   sftpPosition?: SftpPosition
 }
 
-function tabSftpPreferences(value: Record<string, unknown> = {}): Pick<WorkspaceTab, 'sftpOpen' | 'sftpPosition'> {
-  const storage = typeof localStorage === 'undefined' ? undefined : localStorage
+type LegacySftpPreferences = { sftpOpen?: string | null; sftpPosition?: string | null }
+
+function tabSftpPreferences(value: Record<string, unknown> = {}, legacy: LegacySftpPreferences = {}): Pick<WorkspaceTab, 'sftpOpen' | 'sftpPosition'> {
   return {
-    sftpOpen: typeof value.sftpOpen === 'boolean' ? value.sftpOpen : storage?.getItem('remotehub.sftpOpen') !== 'false',
-    sftpPosition: normalizeSftpPosition(typeof value.sftpPosition === 'string' ? value.sftpPosition : storage?.getItem('remotehub.sftpPosition') ?? null)
+    sftpOpen: typeof value.sftpOpen === 'boolean' ? value.sftpOpen : legacy.sftpOpen !== 'false',
+    sftpPosition: normalizeSftpPosition(typeof value.sftpPosition === 'string' ? value.sftpPosition : legacy.sftpPosition ?? null)
   }
 }
 
@@ -45,19 +47,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const viewCount = ref<WorkspaceViewCount>(1)
   const secondaryId = computed(() => secondaryIds.value[0] || null)
   const activeTab = computed(() => tabs.value.find((tab) => tab.id === activeId.value) || tabs.value[0])
+  const connectionTabs = computed(() => tabs.value.filter((tab) => tab.connectionId))
   const visibleIds = computed(() => paneIds.value)
   let nextTabId = 0
+  const closeGuards = new Map<string, Set<() => Promise<boolean>>>()
+  let checkingClose = false
 
   watch([tabs, activeId, paneIds, viewCount], persist, { deep: true })
 
-  function openConnection(connectionId: string, title: string, type: 'terminal' | 'sftp' | 'sql'): void {
+  function openConnection(connectionId: string, title: string, type: 'terminal' | 'sftp' | 'sql', options: { sftpOpen?: boolean } = {}): void {
     const id = `connection:${connectionId}:${++nextTabId}`
-    tabs.value.push({ id, type, title, connectionId, closable: true, ...(type === 'terminal' ? tabSftpPreferences() : {}) })
+    const sftp = type === 'terminal' ? tabSftpPreferences() : {}
+    if (type === 'terminal' && options.sftpOpen !== undefined) sftp.sftpOpen = options.sftpOpen
+    tabs.value.push({ id, type, title, connectionId, closable: true, ...sftp })
     activate(id)
   }
 
-  function toggleSftp(id: string): void {
+  async function toggleSftp(id: string): Promise<void> {
     const tab = tabs.value.find((item) => item.id === id && item.type === 'terminal')
+    if (tab && tab.sftpOpen !== false && closeGuards.has(id) && !await canClose([id])) return
     if (tab) tab.sftpOpen = tab.sftpOpen === false
   }
 
@@ -101,10 +109,37 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     tabs.value.splice(Math.max(1, target + (after ? 1 : 0)), 0, tab)
   }
 
-  function close(id: string, force = false): void {
+  function registerCloseGuard(id: string, guard: () => Promise<boolean>): () => void {
+    const guards = closeGuards.get(id) || new Set<() => Promise<boolean>>()
+    guards.add(guard)
+    closeGuards.set(id, guards)
+    return () => { guards.delete(guard); if (!guards.size) closeGuards.delete(id) }
+  }
+
+  async function canClose(ids = tabs.value.map((tab) => tab.id)): Promise<boolean> {
+    if (checkingClose) return false
+    checkingClose = true
+    try {
+      for (const id of ids) for (const guard of closeGuards.get(id) || []) if (!await guard()) return false
+      return true
+    } finally { checkingClose = false }
+  }
+
+  async function closeTabs(ids: string[], force = false): Promise<boolean> {
+    const candidates = ids.filter((id) => tabs.value.some((tab) => tab.id === id && tab.closable && (force || !tab.pinned)))
+    if (candidates.some((id) => closeGuards.has(id)) && !await canClose(candidates)) return false
+    candidates.forEach((id) => closeNow(id))
+    return true
+  }
+
+  function close(id: string, force = false): Promise<boolean> {
+    return closeTabs([id], force)
+  }
+
+  function closeNow(id: string): void {
     const index = tabs.value.findIndex((tab) => tab.id === id)
     const tab = tabs.value[index]
-    if (!tab?.closable || (tab.pinned && !force)) return
+    if (!tab?.closable) return
     tabs.value.splice(index, 1)
     const pane = paneIds.value.indexOf(id)
     if (pane >= 0) {
@@ -121,18 +156,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (tab?.closable) tab.pinned = !tab.pinned
   }
 
-  function closeOthers(id = activeId.value): void {
-    tabs.value.filter((tab) => tab.id !== id && tab.closable && !tab.pinned).forEach((tab) => close(tab.id))
+  function closeOthers(id = activeId.value): Promise<boolean> {
+    const closing = closeTabs(tabs.value.filter((tab) => tab.id !== id).map((tab) => tab.id))
     activate(id)
+    return closing
   }
 
-  function closeRight(id = activeId.value): void {
+  function closeRight(id = activeId.value): Promise<boolean> {
     const index = tabs.value.findIndex((tab) => tab.id === id)
-    tabs.value.slice(index + 1).filter((tab) => tab.closable && !tab.pinned).forEach((tab) => close(tab.id))
+    return closeTabs(tabs.value.slice(index + 1).map((tab) => tab.id))
   }
 
-  function closeAll(): void {
-    tabs.value.filter((tab) => tab.closable && !tab.pinned).forEach((tab) => close(tab.id))
+  function closeAll(): Promise<boolean> {
+    return closeTabs(tabs.value.map((tab) => tab.id))
   }
 
   function openSplit(id = activeId.value): void {
@@ -182,20 +218,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function cycle(direction: 1 | -1): void {
-    const connectionTabs = tabs.value.filter((tab) => tab.closable)
-    if (!connectionTabs.length) return
-    const index = connectionTabs.findIndex((tab) => tab.id === activeId.value)
-    activate(connectionTabs[(index + direction + connectionTabs.length) % connectionTabs.length].id)
+    const count = connectionTabs.value.length
+    if (!count) return
+    const index = connectionTabs.value.findIndex((tab) => tab.id === activeId.value)
+    const target = index < 0 ? (direction === 1 ? 0 : count - 1) : (index + direction + count) % count
+    activate(connectionTabs.value[target].id)
   }
 
-  function removeConnection(connectionId: string): void {
-    tabs.value.filter((tab) => tab.connectionId === connectionId).forEach((tab) => close(tab.id, true))
+  function removeConnection(connectionId: string): Promise<boolean> {
+    return closeTabs(tabs.value.filter((tab) => tab.connectionId === connectionId).map((tab) => tab.id), true)
   }
 
-  function restore(validConnectionIds: Iterable<string>, serialized?: string | null): void {
+  function restore(validConnectionIds: Iterable<string>, serialized?: string | null, legacySftp: LegacySftpPreferences = {}): void {
     const validIds = new Set(validConnectionIds)
     try {
-      const state = JSON.parse(serialized === undefined ? localStorage.getItem(STORAGE_KEY) || '{}' : serialized || '{}') as Record<string, unknown>
+      const state = JSON.parse(serialized || '{}') as Record<string, unknown>
       const restored = Array.isArray(state.tabs) ? state.tabs.filter((value): value is Record<string, unknown> => {
         if (!value || typeof value !== 'object') return false
         return typeof value.id === 'string' && typeof value.title === 'string' && typeof value.connectionId === 'string'
@@ -207,7 +244,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         connectionId: value.connectionId as string,
         closable: true,
         pinned: value.pinned === true,
-        ...(value.type === 'terminal' ? tabSftpPreferences(value) : {})
+        ...(value.type === 'terminal' ? tabSftpPreferences(value, legacySftp) : {})
       })) : []
       const unique = restored.filter((tab, index) => restored.findIndex((item) => item.id === tab.id) === index)
       tabs.value = [{ ...welcomeTab }, ...unique]
@@ -229,15 +266,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function persist(): void {
-    if (typeof localStorage === 'undefined') return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    void storageService.set(STORAGE_KEY, JSON.stringify({
       tabs: tabs.value.filter((tab) => tab.closable),
       activeId: activeId.value,
       secondaryId: secondaryId.value,
       secondaryIds: secondaryIds.value,
       paneIds: paneIds.value,
       viewCount: viewCount.value
-    }))
+    })).catch(() => undefined)
   }
 
   function normalizeViewCount(): void {
@@ -248,5 +284,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     viewCount.value = paneIds.value.length >= 3 ? 4 : paneIds.value.length === 2 ? 2 : 1
   }
 
-  return { tabs, activeId, secondaryId, secondaryIds, viewCount, activeTab, visibleIds, openConnection, activate, focusPane, showInPane, paneIndex, moveTab, close, togglePinned, toggleSftp, setSftpPosition, closeOthers, closeRight, closeAll, openSplit, closeSplit, setViewCount, closePane, isVisible, canUseViewCount, cycle, removeConnection, restore }
+  return { tabs, connectionTabs, activeId, secondaryId, secondaryIds, viewCount, activeTab, visibleIds, openConnection, activate, focusPane, showInPane, paneIndex, moveTab, close, registerCloseGuard, canClose, togglePinned, toggleSftp, setSftpPosition, closeOthers, closeRight, closeAll, openSplit, closeSplit, setViewCount, closePane, isVisible, canUseViewCount, cycle, removeConnection, restore }
 })

@@ -6,3 +6,9 @@ electron-cache/
 npm-cache/
 *.log
 .agents
+*.jks
+*.keystore
+
+# Local test evidence and machine-specific IDE state
+/429.JPG
+**/.DS_Store

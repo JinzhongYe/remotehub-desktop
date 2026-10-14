@@ -1,4 +1,4 @@
-name: Release desktop
+name: Release desktop and Android
 
 on:
   push:
@@ -79,10 +79,66 @@ jobs:
             release/*.dmg
             release/*.AppImage
 
+  android:
+    name: Package Android arm64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      NDK_VERSION: '27.0.12077973'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.1'
+          targets: aarch64-linux-android
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' "ndk;$NDK_VERSION"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install mobile build dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Restore persistent test signing key
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_DEBUG_KEYSTORE_BASE64" || { echo 'Missing ANDROID_DEBUG_KEYSTORE_BASE64 secret'; exit 1; }
+          mkdir -p "$HOME/.android"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+      - name: Verify release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm run release:verify
+      - name: Build standalone Android test APK
+        run: npm run android:build -- --debug --target aarch64 --features custom-protocol --split-per-abi --apk
+      - name: Name Android installer
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p release
+          cp src-tauri/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk "release/RemoteHub-$VERSION-android-arm64-test.apk"
+      - name: Upload Android installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64
+          if-no-files-found: error
+          retention-days: 14
+          path: release/*.apk
+
   publish:
     name: Publish preview release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -96,6 +152,11 @@ jobs:
           pattern: desktop-*
           path: release
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: android-*
+          path: release
+          merge-multiple: true
       - name: Verify version and generate SHA-256 checksums
         run: |
           npm run release:verify
@@ -105,7 +166,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release create "$GITHUB_REF_NAME"
-          release/*.exe release/*.dmg release/*.AppImage release/SHA256SUMS.txt
+          release/*.exe release/*.dmg release/*.AppImage release/*.apk release/SHA256SUMS.txt
           --verify-tag --prerelease
-          --title "RemoteHub Desktop $GITHUB_REF_NAME"
+          --title "RemoteHub $GITHUB_REF_NAME"
           --notes-file docs/RELEASE_NOTES.md

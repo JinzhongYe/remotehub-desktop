@@ -39,7 +39,9 @@ describe('Phase 6 MySQL adapter', () => {
       type: 'mysql', database: 'mes', serverVersion: '8.4.0', ping: async () => undefined,
       listDatabases: async () => [{ name: 'mes', system: false }],
       useDatabase: async () => undefined, listTables: async () => [], listColumns: async () => [], close,
-      query: () => new Promise((resolve) => { finishQuery = resolve })
+      query: () => new Promise((resolve) => { finishQuery = resolve }),
+      applyChanges: async () => undefined,
+      listTableDetails: async () => ({ columns: [], rows: [], hasMore: false })
     }
     const markConnected = vi.fn()
     const factory = { connect: vi.fn(async () => adapter) }
@@ -50,6 +52,7 @@ describe('Phase 6 MySQL adapter', () => {
     })
     const running = service.query(connected.sessionId, { sql: 'SELECT 1' })
     await expect(service.query(connected.sessionId, { sql: 'SELECT 2' })).rejects.toMatchObject({ code: 'DATABASE_BUSY' })
+    await expect(service.listTableDetails(connected.sessionId, 'mes', 'cells', 'indexes')).rejects.toMatchObject({ code: 'DATABASE_BUSY' })
     finishQuery?.({ kind: 'rows', columns: [], rows: [], page: 0, pageSize: 200, hasMore: false, affectedRows: 0, changedRows: 0, warningStatus: 0, durationMs: 1, statement: 'SELECT' })
     await expect(running).resolves.toMatchObject({ kind: 'rows' })
     service.disconnect(connected.sessionId)

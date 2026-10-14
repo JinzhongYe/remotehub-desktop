@@ -1,4 +1,4 @@
-import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseTable } from '../../../shared/database'
+import type { DatabaseCatalog, DatabaseChangesRequest, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseSchemaSection, DatabaseTable, DatabaseTableDetails } from '../../../shared/database'
 import type { Connection } from '../../../shared/types'
 import type { SessionConnectionStatusEvent } from '../../../shared/connection-status'
 
@@ -19,7 +19,9 @@ export interface DatabaseAdapter {
   useDatabase(database: string): Promise<void>
   listTables(database: string): Promise<DatabaseTable[]>
   listColumns(database: string, table: string): Promise<DatabaseColumn[]>
+  listTableDetails(database: string, table: string, section: DatabaseSchemaSection): Promise<DatabaseTableDetails>
   query(request: DatabaseQueryRequest): Promise<DatabaseQueryResult>
+  applyChanges(request: DatabaseChangesRequest): Promise<void>
   close(): void
 }
 

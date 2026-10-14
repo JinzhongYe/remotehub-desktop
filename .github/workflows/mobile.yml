@@ -1,0 +1,69 @@
+name: Build mobile on request
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Mobile platform
+        type: choice
+        options: [android, ios]
+        default: android
+permissions:
+  contents: read
+jobs:
+  android:
+    if: inputs.platform == 'android'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.1'
+          targets: aarch64-linux-android
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Restore persistent test signing key
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_DEBUG_KEYSTORE_BASE64" || { echo 'Missing Android test signing secret'; exit 1; }
+          mkdir -p "$HOME/.android"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+      - run: npm run android:build -- --debug --target aarch64 --features custom-protocol --split-per-abi --apk
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+  ios:
+    if: inputs.platform == 'ios'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - run: brew install xcodegen cocoapods
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run tauri -- ios init --ci --skip-targets-install
+      - run: npm run ios:build -- --debug --target aarch64-sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator
+          path: src-tauri/gen/apple/build/**/*.app

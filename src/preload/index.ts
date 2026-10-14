@@ -4,9 +4,10 @@ import type { SshDataEvent, SshStatusEvent, SshPasswordOptions } from '../shared
 import type { SftpTransferEvent } from '../shared/sftp'
 import type { SessionConnectionStatusEvent } from '../shared/connection-status'
 import type { SerialDataEvent, SerialStatusEvent } from '../shared/serial'
-import type { DatabaseCsvExport, DatabaseQueryRequest } from '../shared/database'
+import type { DatabaseChangesRequest, DatabaseCsvExport, DatabaseQueryRequest, DatabaseSchemaSection } from '../shared/database'
 import type { LocalShellDataEvent, LocalShellStatusEvent } from '../shared/local-shell'
 import type { LocalDirectory } from '../shared/local-files'
+import type { RemoteFileProvider, RemoteHubPlatform } from '../shared/platform'
 
 // Filter before crossing contextBridge: a chunk for one session must not invoke
 // callbacks (or fill pending queues) in every other terminal in the workspace.
@@ -30,7 +31,7 @@ function subscribeSshData(listener: (event: SshDataEvent) => void, sessionId: st
   }
 }
 
-function remoteFiles(prefix: 'sftp' | 'ftp') {
+function remoteFiles(prefix: 'sftp' | 'ftp'): RemoteFileProvider {
   return {
     connect: (connectionId: string, options?: SshPasswordOptions) => ipcRenderer.invoke(`${prefix}:connect`, connectionId, options),
     list: (sessionId: string, path: string) => ipcRenderer.invoke(`${prefix}:list`, sessionId, path),
@@ -61,7 +62,21 @@ function remoteFiles(prefix: 'sftp' | 'ftp') {
   }
 }
 
-const api = {
+const api: RemoteHubPlatform = {
+  capabilities: {
+    connectionManagement: true,
+    ssh: true,
+    sftp: true,
+    database: true,
+    databaseSqlite: true,
+    databaseSshTunnel: true,
+    ftp: true,
+    serial: true,
+    localShell: true,
+    localFiles: true,
+    sftpTransferControl: true,
+    codexStatus: true
+  },
   app: {
     getInfo: () => ipcRenderer.invoke('app:getInfo'),
     copyText: (text: string) => ipcRenderer.invoke('app:copyText', text),
@@ -75,7 +90,9 @@ const api = {
     chooseUploadFolder: () => ipcRenderer.invoke('app:chooseUploadFolder'),
     chooseDownloadPath: (defaultName: string) => ipcRenderer.invoke('app:chooseDownloadPath', defaultName),
     chooseDownloadDirectory: () => ipcRenderer.invoke('app:chooseDownloadDirectory'),
+    releaseFiles: async () => ({ ok: true }),
     confirmClose: () => ipcRenderer.invoke('app:confirmClose'),
+    onBackRequest: () => () => undefined,
     onCloseRequest: (listener: () => void) => {
       const handler = (): void => listener()
       ipcRenderer.on('app:close-requested', handler)
@@ -107,6 +124,7 @@ const api = {
     write: (sessionId: string, data: string) => ipcRenderer.invoke('ssh:write', sessionId, data),
     acknowledgeOutput: (sessionId: string, sequence: number) => ipcRenderer.invoke('ssh:acknowledgeOutput', sessionId, sequence),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('ssh:resize', sessionId, cols, rows),
+    exec: (sessionId: string, command: string) => ipcRenderer.invoke('ssh:exec', sessionId, command),
     statusOverview: (sessionId: string) => ipcRenderer.invoke('ssh:statusOverview', sessionId),
     codexStatus: (sessionId: string) => ipcRenderer.invoke('ssh:codexStatus', sessionId),
     disconnect: (sessionId: string) => ipcRenderer.invoke('ssh:disconnect', sessionId),
@@ -161,7 +179,9 @@ const api = {
     useDatabase: (sessionId: string, name: string) => ipcRenderer.invoke('database:useDatabase', sessionId, name),
     listTables: (sessionId: string, name: string) => ipcRenderer.invoke('database:listTables', sessionId, name),
     listColumns: (sessionId: string, name: string, table: string) => ipcRenderer.invoke('database:listColumns', sessionId, name, table),
+    listTableDetails: (sessionId: string, name: string, table: string, section: DatabaseSchemaSection) => ipcRenderer.invoke('database:listTableDetails', sessionId, name, table, section),
     query: (sessionId: string, request: DatabaseQueryRequest) => ipcRenderer.invoke('database:query', sessionId, request),
+    applyChanges: (sessionId: string, request: DatabaseChangesRequest) => ipcRenderer.invoke('database:applyChanges', sessionId, request),
     exportCsv: (request: DatabaseCsvExport) => ipcRenderer.invoke('database:exportCsv', request),
     disconnect: (sessionId: string) => ipcRenderer.invoke('database:disconnect', sessionId),
     onStatus: (listener: (event: SessionConnectionStatusEvent) => void) => {
@@ -179,4 +199,4 @@ const api = {
 
 contextBridge.exposeInMainWorld('api', api)
 
-export type RemoteHubApi = typeof api
+export type RemoteHubApi = RemoteHubPlatform

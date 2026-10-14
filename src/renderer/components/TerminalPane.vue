@@ -17,10 +17,14 @@ import UiIcon from './UiIcon.vue'
 import type { SshPasswordOptions } from '../../shared/ssh'
 import { useConnectionStore } from '../stores/connection'
 import { useSshPasswordStore } from '../stores/ssh-password'
+import { appService, connectionService, getPlatformCapabilities, shellService, sshService } from '../../services'
+import { useMobileResume } from '../mobile-lifecycle'
+import { useMobileBackLayer } from '../mobile-back'
 
 const props = defineProps<{ connectionId: string; active: boolean; local?: boolean; sftpOpen?: boolean }>()
 const connectionStore = useConnectionStore()
 const sshPassword = useSshPasswordStore()
+const capabilities = getPlatformCapabilities()
 const emit = defineEmits<{ toggleSftp: []; 'connection-status': [status: TabConnectionStatus] }>()
 
 const terminalHost = ref<HTMLElement | null>(null)
@@ -30,7 +34,10 @@ let pendingPassword: SshPasswordOptions | undefined
 let connecting = false
 const pendingFingerprint = ref('')
 const contextMenu = ref<{ x: number; y: number } | null>(null)
+const clipboardMenu = ref<HTMLDetailsElement | null>(null)
+const clipboardMenuOpen = ref(false)
 const hasSelection = ref(false)
+const controlKey = ref(false)
 const overviewOpen = ref(false)
 const overview = ref<ServerStatus | null>(null)
 const loadAverageValues = computed(() => {
@@ -61,6 +68,26 @@ let pendingTerminalEscape = ''
 let terminalOutput: ReturnType<typeof createTerminalOutput> | undefined
 const pendingData = new Map<string, string[]>()
 const pendingStatus = new Map<string, SshStatusEvent>()
+
+useMobileBackLayer(() => props.active && (Boolean(props.sftpOpen)), () => emit('toggleSftp'))
+useMobileBackLayer(() => props.active && (Boolean(contextMenu.value)), () => { contextMenu.value = null })
+useMobileBackLayer(() => props.active && (clipboardMenuOpen.value), () => closeClipboardMenu(true))
+useMobileBackLayer(() => props.active && (overviewOpen.value), closeOverview)
+useMobileBackLayer(() => props.active && (codexOpen.value), closeCodexStatus)
+
+useMobileResume(() => props.active && Boolean(sessionId) && !connecting, async () => {
+  const current = sessionId
+  if (!current) return
+  try {
+    if (props.local) resizeTerminal()
+    else await sshService.exec(current, 'true')
+    if (!disposed && sessionId === current) resizeTerminal()
+  } catch (error) {
+    if (disposed || sessionId !== current) return
+    status.value = 'error'
+    statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
+  }
+})
 
 watch(status, (value) => emit('connection-status', value), { immediate: true, flush: 'sync' })
 
@@ -102,13 +129,13 @@ function handleData(event: SshDataEvent): void {
   }
   if (props.local) writeTerminal(event.data)
   else terminalOutput?.enqueue(event.data, () => {
-    if (!disposed && sessionId === event.sessionId && event.sequence !== undefined) void window.api.ssh.acknowledgeOutput(event.sessionId, event.sequence).catch(() => undefined)
+    if (!disposed && sessionId === event.sessionId && event.sequence !== undefined) void sshService.acknowledgeOutput(event.sessionId, event.sequence).catch(() => undefined)
   })
 }
 
 function handleStatus(event: SshStatusEvent): void {
   if (event.sessionId !== sessionId) {
-    if (!sessionId && status.value === 'connecting') pendingStatus.set(event.sessionId, event)
+    if (props.local && !sessionId && status.value === 'connecting') pendingStatus.set(event.sessionId, event)
     return
   }
   status.value = event.status
@@ -138,7 +165,7 @@ async function connect(): Promise<void> {
   if (!props.local) removeDataListener?.()
   terminalOutput?.dispose()
   if (sessionId) {
-    await (props.local ? window.api.shell.disconnect(sessionId) : window.api.ssh.disconnect(sessionId)).catch(() => undefined)
+    await (props.local ? shellService.disconnect(sessionId) : sshService.disconnect(sessionId)).catch(() => undefined)
     sessionId = null
   }
   if (disposed) { connecting = false; return }
@@ -156,7 +183,9 @@ async function connect(): Promise<void> {
   terminal?.clear()
   try {
     if (!props.local && !pendingPassword) {
-      const connection = connectionStore.connections.find(item => item.id === props.connectionId)
+      const { connections } = await connectionService.list()
+      if (disposed) return
+      const connection = connections.find((item: { id: string }) => item.id === props.connectionId)
       if (connection?.authType === 'none') {
         const answer = await sshPassword.request(connection.id, `${connection.name} · ${connection.username || ''}@${connection.host}`, 'ssh')
         if (answer.status !== 'submitted' || disposed) {
@@ -172,9 +201,9 @@ async function connect(): Promise<void> {
       // single owner; no per-pane buffering of other sessions is needed.
       sessionId = crypto.randomUUID()
       terminalOutput = createTerminalOutput(writeTerminal, () => props.active && document.visibilityState !== 'hidden')
-      removeDataListener = window.api.ssh.onData(handleData, sessionId)
+      removeDataListener = sshService.onData(handleData, sessionId)
     }
-    const result = props.local ? await window.api.shell.connect(props.connectionId) : await window.api.ssh.connect(props.connectionId, pendingPassword, sessionId!)
+    const result = props.local ? await shellService.connect(props.connectionId) : await sshService.connect(props.connectionId, pendingPassword, sessionId!)
     if ('trustRequired' in result && result.trustRequired) {
       if (disposed) return
       pendingData.clear()
@@ -188,9 +217,10 @@ async function connect(): Promise<void> {
       return
     }
     if (disposed) {
-      await (props.local ? window.api.shell.disconnect(result.sessionId) : window.api.ssh.disconnect(result.sessionId)).catch(() => undefined)
+      if ('sessionId' in result) await (props.local ? shellService.disconnect(result.sessionId) : sshService.disconnect(result.sessionId)).catch(() => undefined)
       return
     }
+    if (!('sessionId' in result)) return
     sessionId = result.sessionId
     if (pendingPassword?.savePassword) void connectionStore.load().catch(() => undefined)
     pendingPassword = undefined
@@ -198,7 +228,13 @@ async function connect(): Promise<void> {
     flushPending(result.sessionId)
     resizeTerminal()
   } catch (error) {
-    if (!props.local) { sessionId = null; removeDataListener?.(); terminalOutput?.dispose() }
+    if (!props.local) {
+      if (sessionId) void sshService.disconnect(sessionId).catch(() => undefined)
+      sessionId = null
+      removeDataListener?.()
+      terminalOutput?.dispose()
+    }
+    if (disposed) return
     pendingPassword = undefined
     status.value = 'error'
     statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
@@ -213,7 +249,7 @@ async function refreshOverview(): Promise<void> {
   overviewLoading.value = true
   overviewError.value = ''
   try {
-    const result = await window.api.ssh.statusOverview(current)
+    const result = await sshService.statusOverview(current)
     if (sessionId === current) overview.value = result
   } catch (error) {
     overviewError.value = error instanceof Error ? error.message : t('serverStatusUnavailable')
@@ -228,7 +264,7 @@ function toggleOverview(): void {
     closeCodexStatus()
     overviewOpen.value = true
     void refreshOverview()
-    overviewRefreshTimer = window.setInterval(() => { if (props.active) void refreshOverview() }, 15_000)
+    overviewRefreshTimer = window.setInterval(() => { if (props.active && document.visibilityState !== 'hidden') void refreshOverview() }, 15_000)
   }
   void nextTick(resizeTerminal)
 }
@@ -237,6 +273,7 @@ function closeOverview(): void {
   overviewOpen.value = false
   if (overviewRefreshTimer !== undefined) window.clearInterval(overviewRefreshTimer)
   overviewRefreshTimer = undefined
+  void nextTick(resizeTerminal)
 }
 
 async function refreshCodexStatus(): Promise<void> {
@@ -245,7 +282,7 @@ async function refreshCodexStatus(): Promise<void> {
   codexLoading.value = true
   codexError.value = ''
   try {
-    const result = await (props.local ? window.api.shell.codexStatus(current) : window.api.ssh.codexStatus(current))
+    const result = await (props.local ? shellService.codexStatus(current) : sshService.codexStatus(current))
     if (sessionId === current) codexStatus.value = result
   } catch (error) {
     if (sessionId === current) codexError.value = error instanceof Error ? error.message : t('codexStatusUnavailable')
@@ -335,7 +372,7 @@ async function trustHostKey(): Promise<void> {
   const fingerprint = pendingFingerprint.value
   if (!fingerprint) return
   try {
-    await window.api.ssh.trustHostKey(props.connectionId, fingerprint)
+    await sshService.trustHostKey(props.connectionId, fingerprint)
     await connect()
   } catch (error) {
     status.value = 'error'
@@ -344,6 +381,7 @@ async function trustHostKey(): Promise<void> {
 }
 
 function showContextMenu(event: MouseEvent): void {
+  closeClipboardMenu()
   event.preventDefault()
   event.stopPropagation()
   hasSelection.value = terminal?.hasSelection() ?? false
@@ -353,12 +391,18 @@ function showContextMenu(event: MouseEvent): void {
   }
 }
 
+function closeClipboardMenu(restoreFocus = false): void {
+  if (clipboardMenu.value) clipboardMenu.value.open = false
+  if (restoreFocus) clipboardMenu.value?.querySelector('summary')?.focus()
+}
+
 async function copySelection(): Promise<void> {
   const selection = terminal?.getSelection()
   contextMenu.value = null
+  closeClipboardMenu()
   if (!selection) return
   try {
-    await window.api.app.copyText(selection)
+    await appService.copyText(selection)
     terminal?.focus()
   } catch (error) {
     statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
@@ -367,11 +411,12 @@ async function copySelection(): Promise<void> {
 
 async function pasteClipboard(): Promise<void> {
   contextMenu.value = null
+  closeClipboardMenu()
   const current = sessionId
   const target = terminal
   if (!current || !target || status.value !== 'connected') return
   try {
-    const text = await window.api.app.readText()
+    const text = await appService.readText()
     if (disposed || sessionId !== current || status.value !== 'connected') return
     if (text) target.paste(text)
     target.focus()
@@ -384,6 +429,25 @@ function selectAll(): void {
   terminal?.selectAll()
   hasSelection.value = terminal?.hasSelection() ?? false
   contextMenu.value = null
+  closeClipboardMenu()
+  terminal?.focus()
+}
+
+function sendInput(data: string): void {
+  if (!sessionId || status.value !== 'connected') return
+  if (controlKey.value && data.length === 1 && /[@-_a-z]/i.test(data)) {
+    data = String.fromCharCode(data.toUpperCase().charCodeAt(0) & 31)
+    controlKey.value = false
+  }
+  void (props.local ? shellService.write(sessionId, data) : sshService.write(sessionId, data)).catch((error) => {
+    status.value = 'error'
+    statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
+  })
+}
+
+function sendKey(data: string): void {
+  controlKey.value = false
+  sendInput(data)
   terminal?.focus()
 }
 
@@ -393,7 +457,7 @@ async function disconnect(): Promise<void> {
   closeOverview()
   const current = sessionId
   sessionId = null
-  await (props.local ? window.api.shell.disconnect(current) : window.api.ssh.disconnect(current)).catch(() => undefined)
+  await (props.local ? shellService.disconnect(current) : sshService.disconnect(current)).catch(() => undefined)
   status.value = 'closed'
 }
 
@@ -403,7 +467,7 @@ onMounted(async () => {
   terminal = new Terminal({
     convertEol: true,
     cursorBlink: props.active,
-    fontFamily: '"JetBrains Mono", "Noto Sans SC", serif',
+    fontFamily: '"JetBrains Mono", "PingFang SC", "Microsoft YaHei", monospace',
     fontSize: 14,
     lineHeight: 1.2,
     fontWeight: '400',
@@ -419,22 +483,22 @@ onMounted(async () => {
   themeObserver = new MutationObserver(() => { if (terminal) { terminal.options.theme = terminalTheme(); terminal.options.minimumContrastRatio = terminalContrastRatio() } })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   terminalLayout = observeTerminalLayout(terminalHost.value, terminal, fitAddon, () => {
-    if (sessionId && terminal) void (props.local ? window.api.shell.resize(sessionId, terminal.cols, terminal.rows) : window.api.ssh.resize(sessionId, terminal.cols, terminal.rows)).catch(() => undefined)
+    if (sessionId && terminal) void (props.local ? shellService.resize(sessionId, terminal.cols, terminal.rows) : sshService.resize(sessionId, terminal.cols, terminal.rows)).catch(() => undefined)
   })
-  if (props.local) removeDataListener = window.api.shell.onData(handleData)
-  removeStatusListener = props.local ? window.api.shell.onStatus(handleStatus) : window.api.ssh.onStatus(handleStatus)
+  if (props.local) removeDataListener = shellService.onData(handleData)
+  removeStatusListener = props.local ? shellService.onStatus(handleStatus) : sshService.onStatus(handleStatus)
   const input = terminal.onData((data) => {
-    if (sessionId) void (props.local ? window.api.shell.write(sessionId, data) : window.api.ssh.write(sessionId, data)).catch((error) => {
-      status.value = 'error'
-      statusMessage.value = error instanceof Error ? error.message : unavailableMessage()
-    })
+    sendInput(data)
   })
   removeInputListener = () => input.dispose()
   const selection = terminal.onSelectionChange(() => {
     hasSelection.value = terminal?.hasSelection() ?? false
   })
   removeSelectionListener = () => selection.dispose()
-  const closeContextMenu = (): void => { contextMenu.value = null }
+  const closeContextMenu = (event: PointerEvent): void => {
+    contextMenu.value = null
+    if (!clipboardMenu.value?.contains(event.target as Node)) closeClipboardMenu()
+  }
   document.addEventListener('pointerdown', closeContextMenu)
   removeContextMenuListener = () => document.removeEventListener('pointerdown', closeContextMenu)
   void connect()
@@ -460,7 +524,7 @@ onBeforeUnmount(() => {
   removeContextMenuListener?.()
   terminalLayout?.dispose()
   themeObserver?.disconnect()
-  if (sessionId) void (props.local ? window.api.shell.disconnect(sessionId) : window.api.ssh.disconnect(sessionId)).catch(() => undefined)
+  if (sessionId) void (props.local ? shellService.disconnect(sessionId) : sshService.disconnect(sessionId)).catch(() => undefined)
   terminal?.dispose()
 })
 </script>
@@ -477,15 +541,28 @@ onBeforeUnmount(() => {
         <span v-if="statusMessage" class="terminal-message" :title="statusMessage">{{ statusMessage }}</span>
       </div>
       <div class="terminal-actions">
-        <button v-if="!local" class="toolbar-button muted sftp-toggle" :class="{ active: sftpOpen }" :aria-pressed="sftpOpen" :title="t(sftpOpen ? 'hideSftp' : 'showSftp')" @click="emit('toggleSftp')"><UiIcon name="transfer" /> <span>SFTP</span></button>
+        <details ref="clipboardMenu" class="terminal-clipboard-menu" @toggle="clipboardMenuOpen = ($event.target as HTMLDetailsElement).open" @keydown.esc.stop.prevent="closeClipboardMenu(true)">
+          <summary class="toolbar-button muted" :aria-label="t('actions')" :title="t('actions')"><UiIcon name="more" /></summary>
+          <div>
+            <button :disabled="!hasSelection" @click="copySelection">{{ t('copy') }}</button>
+            <button :disabled="status !== 'connected'" @click="pasteClipboard">{{ t('paste') }}</button>
+            <button @click="selectAll">{{ t('selectAll') }}</button>
+          </div>
+        </details>
+        <button v-if="!local && capabilities.sftp" class="toolbar-button muted sftp-toggle" :class="{ active: sftpOpen }" :aria-pressed="sftpOpen" :title="t(sftpOpen ? 'hideSftp' : 'showSftp')" :aria-label="t(sftpOpen ? 'hideSftp' : 'showSftp')" @click="emit('toggleSftp')"><UiIcon name="transfer" /> <span>SFTP</span></button>
         <button v-if="!local" class="toolbar-button muted icon-only" :class="{ active: overviewOpen }" :title="t('serverOverview')" :aria-label="t('serverOverview')" :aria-pressed="overviewOpen" :disabled="status !== 'connected'" @click="toggleOverview"><UiIcon name="panel" /></button>
-        <button v-if="status === 'connected'" class="toolbar-button muted icon-only" :class="{ active: codexOpen }" :title="t('codexStatus')" :aria-label="t('codexStatus')" :aria-pressed="codexOpen" @click="toggleCodexStatus"><UiIcon name="gauge" /></button>
-        <button v-if="!pendingFingerprint && (status === 'error' || status === 'closed')" class="toolbar-button" @click="connect"><UiIcon name="refresh" /> <span>{{ t('reconnect') }}</span></button>
-        <button v-else-if="local && status === 'connected'" class="toolbar-button muted" @click="disconnect"><UiIcon name="power" /> <span>{{ t('disconnect') }}</span></button>
+        <button v-if="status === 'connected' && capabilities.codexStatus" class="toolbar-button muted icon-only" :class="{ active: codexOpen }" :title="t('codexStatus')" :aria-label="t('codexStatus')" :aria-pressed="codexOpen" @click="toggleCodexStatus"><UiIcon name="gauge" /></button>
+        <button v-if="!pendingFingerprint && (status === 'error' || status === 'closed')" class="toolbar-button" :aria-label="t('reconnect')" @click="connect"><UiIcon name="refresh" /> <span>{{ t('reconnect') }}</span></button>
+        <button v-else-if="local && status === 'connected'" class="toolbar-button muted" :aria-label="t('disconnect')" @click="disconnect"><UiIcon name="power" /> <span>{{ t('disconnect') }}</span></button>
       </div>
     </div>
+    <p v-if="statusMessage" class="terminal-mobile-message" role="alert">{{ statusMessage }}</p>
     <div v-if="pendingFingerprint" class="terminal-host-key">
       <span>{{ t('hostKeyPrompt') }}</span><code>{{ t('hostKeyFingerprint') }}: {{ pendingFingerprint }}</code><button class="toolbar-button" @click="trustHostKey">{{ t('trustHostKey') }}</button>
+    </div>
+    <div class="terminal-keyboard" role="toolbar" :aria-label="t('terminalKeys')">
+      <button :disabled="status !== 'connected'" :aria-pressed="controlKey" :aria-label="t('controlKey')" @pointerdown.prevent @click="controlKey = !controlKey; terminal?.focus()">Ctrl</button>
+      <button v-for="key in [{ label: 'Esc', data: '\x1b' }, { label: 'Tab', data: '\t' }, { label: 'Ctrl+C', data: '\x03' }, { label: '↑', data: '\x1b[A' }, { label: '↓', data: '\x1b[B' }, { label: '←', data: '\x1b[D' }, { label: '→', data: '\x1b[C' }]" :key="key.label" :disabled="status !== 'connected'" :aria-label="key.label" @pointerdown.prevent @click="sendKey(key.data)">{{ key.label }}</button>
     </div>
     <div class="terminal-body">
       <div ref="terminalHost" class="terminal-host" @contextmenu.capture.prevent.stop="showContextMenu"></div>
@@ -519,7 +596,7 @@ onBeforeUnmount(() => {
           <p v-if="overviewError" class="server-overview-inline-error">{{ overviewError }}</p>
         </template>
       </aside>
-      <aside v-if="codexOpen" class="server-overview codex-overview">
+      <aside v-if="codexOpen && capabilities.codexStatus" class="server-overview codex-overview">
         <header><strong>{{ t('codexStatus') }}</strong><button :title="t('refresh')" :aria-label="t('refresh')" :disabled="codexLoading" @click="refreshCodexStatus"><UiIcon name="refresh" /></button><button :aria-label="t('closeTab')" @click="toggleCodexStatus"><UiIcon name="close" /></button></header>
         <div v-if="codexLoading && !codexStatus" class="server-overview-state">{{ t('loading') }}</div>
         <div v-else-if="codexError && !codexStatus" class="server-overview-state error">{{ codexError }}</div>

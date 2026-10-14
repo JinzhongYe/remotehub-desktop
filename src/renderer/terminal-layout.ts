@@ -45,6 +45,7 @@ export function observeTerminalLayout(host: HTMLElement, terminal: Terminal, add
   // Font metrics and display scaling can change without resizing the host element.
   const render = terminal.onRender(() => { if (syncCellSize()) fit() })
   window.addEventListener('resize', fit)
+  window.visualViewport?.addEventListener('resize', fit)
   document.fonts.addEventListener('loadingdone', fit)
   void document.fonts.ready.then(fit)
   fit()
@@ -57,6 +58,7 @@ export function observeTerminalLayout(host: HTMLElement, terminal: Terminal, add
       observer.disconnect()
       render.dispose()
       window.removeEventListener('resize', fit)
+      window.visualViewport?.removeEventListener('resize', fit)
       document.fonts.removeEventListener('loadingdone', fit)
     }
   }

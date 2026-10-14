@@ -31,10 +31,10 @@ node-pty 1.1.0 的 macOS 预编译辅助程序存在缺少执行位的上游打�
 1. 更新 package.json 版本，并运行 `npm install` 同步 package-lock.json。
 2. 更新 `docs/RELEASE_NOTES.md`，执行本地检查并提交到 main。
 3. 创建与 package.json 完全一致的标签，例如 `v0.1.0-beta.1`，推送该标签。
-4. `Release desktop` 在 Windows x64、macOS Intel、macOS Apple Silicon、Linux x64 runner 独立构建、检查启动，并上传 Actions 临时产物。
+4. `Release desktop and Android` 在 Windows x64、macOS Intel、macOS Apple Silicon、Linux x64 runner 独立构建、检查启动，并上传 Actions 临时产物。
 5. 所有平台成功后，发布 job 汇总安装包和 SHA-256 校验文件，创建 GitHub **预发布**。任何平台失败，都不会发布不完整 Release。
 
-手动运行 `Release desktop`（workflow_dispatch）只构建并上传 Actions 产物，不创建 Release。普通 main 提交和 PR 运行 `Validate source`。当前预发布流水线刻意使用 `--prerelease`；稳定发布需先完成下面的验收和签名，再调整策略。
+手动运行 `Release desktop and Android`（workflow_dispatch）只构建并上传 Actions 产物，不创建 Release。普通 main、feat/Android 提交和 PR 运行 `Validate source`。当前预发布流水线刻意使用 `--prerelease`；稳定发布需先完成下面的验收和签名，再调整策略。
 
 ## 权限与签名
 
@@ -55,3 +55,13 @@ beta.10 已升级至 Electron 44.4.5，并适配原生模块与剪贴板接口�
 - [ ] SQL JSON 完整数据、复制、Workspace 多视图与重启恢复。
 
 自动化检查不能替代这些真实连接和硬件验收。没有测试设备或凭据时，保持预发布并如实记录未验收项。
+
+## 本仓库的桌面与安卓云端发布
+
+发布到 `JinzhongYe/remotehub-desktop`。源码先推送 `feat/Android`，GitHub 的 `Validate source` 检查成功后快进更新 `main`，再推送与 npm/Tauri/Rust 版本一致的 `v*` 标签。
+
+`Release desktop and Android` 同时构建 Windows x64 安装版和免安装版、macOS Intel/ARM64 DMG、Linux x64 AppImage 与 Android ARM64 测试 APK。全部桌面检查和安卓构建成功后，汇总六个安装包及 `SHA256SUMS.txt` 创建预发布。任何平台失败都不发布不完整 Release。
+
+Android 使用 Java 21、Rust 1.98.1、SDK 36 和 NDK 27.0.12077973，启用 `custom-protocol` 内置页面。仓库 Secret `ANDROID_DEBUG_KEYSTORE_BASE64` 保存固定调试签名密钥，runner 恢复后使用；未配置时构建直接失败，不生成随机签名。密钥及本地配置不得提交。
+
+iOS 工程随源码提交，此发布流程不生成 IPA。此次检查、编译和发布均在 GitHub 完成，不在本地打包。如版本标签创建后仍需源码修复，使用新的 beta 编号，不移动已推送的标签。

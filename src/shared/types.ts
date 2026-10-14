@@ -22,6 +22,7 @@ export interface Connection {
   databaseSslMode?: DatabaseSslMode
   sshTunnelId?: string
   credentialId?: string
+  passphraseSaved?: boolean
   hostKeyFingerprint?: string
   groupId?: string
   favorite: boolean
@@ -62,8 +63,10 @@ export interface Group {
 export interface ConnectionSaveRequest {
   connection: ConnectionInput
   credential?: string
+  passphrase?: string
   privateKeyPath?: string
   clearCredential?: boolean
+  clearPassphrase?: boolean
 }
 
 export interface ConnectionOrderItem {

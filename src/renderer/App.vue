@@ -5,17 +5,20 @@ import SshPasswordDialog from './components/SshPasswordDialog.vue'
 import { confirmDialog } from './dialog'
 import { t } from './i18n'
 import { useSshPasswordStore } from './stores/ssh-password'
+import { appService } from '../services'
+import { useWorkspaceStore } from './stores/workspace'
 
 let removeCloseListener: (() => void) | undefined
 let closePromptOpen = false
 const sshPassword = useSshPasswordStore()
+const workspace = useWorkspaceStore()
 
 onMounted(() => {
-  removeCloseListener = window.api.app.onCloseRequest(async () => {
+  removeCloseListener = appService.onCloseRequest(async () => {
     if (closePromptOpen) return
     closePromptOpen = true
     try {
-      if (await confirmDialog({ title: t('closeAppTitle'), message: t('closeAppMessage'), confirmText: t('exitApp'), danger: true })) await window.api.app.confirmClose()
+      if (await confirmDialog({ title: t('closeAppTitle'), message: t('closeAppMessage'), confirmText: t('exitApp'), danger: true }) && await workspace.canClose()) await appService.confirmClose()
     } finally { closePromptOpen = false }
   })
 })

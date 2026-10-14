@@ -9,9 +9,11 @@ function fixture() {
   let id = 0
   const frames = new Map<number, FrameRequestCallback>()
   const windowEvents = new EventTarget()
+  const visualViewport = new EventTarget()
   const fonts = Object.assign(new EventTarget(), { ready: Promise.resolve(), load: vi.fn(async () => []) })
   const observer = { observe: vi.fn(), disconnect: vi.fn() }
   vi.stubGlobal('window', Object.assign(windowEvents, {
+    visualViewport,
     requestAnimationFrame: (callback: FrameRequestCallback) => { frames.set(++id, callback); return id },
     cancelAnimationFrame: (key: number) => frames.delete(key)
   }))
@@ -33,7 +35,7 @@ function fixture() {
   const onFit = vi.fn()
   const layout = observeTerminalLayout(host as unknown as HTMLElement, terminal as unknown as Terminal, addon as unknown as FitAddon, onFit)
   const flush = (): void => { const next = [...frames.values()]; frames.clear(); next.forEach(callback => callback(0)) }
-  return { host, screen, row, terminal, addon, onFit, observer, renderDispose, layout, frames, fonts, flush, resize: () => resize(), render: () => render(), windowEvents }
+  return { host, screen, row, terminal, addon, onFit, observer, renderDispose, layout, frames, fonts, flush, resize: () => resize(), render: () => render(), windowEvents, visualViewport }
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -101,6 +103,9 @@ describe('terminal viewport layout', () => {
     view.windowEvents.dispatchEvent(new Event('resize'))
     view.flush()
     expect(view.addon.fit).toHaveBeenCalledTimes(3)
+    view.visualViewport.dispatchEvent(new Event('resize'))
+    view.flush()
+    expect(view.addon.fit).toHaveBeenCalledTimes(4)
     view.layout.dispose()
   })
 
@@ -114,6 +119,7 @@ describe('terminal viewport layout', () => {
     await view.fonts.ready
     view.fonts.dispatchEvent(new Event('loadingdone'))
     view.windowEvents.dispatchEvent(new Event('resize'))
+    view.visualViewport.dispatchEvent(new Event('resize'))
     view.resize()
     expect(view.frames.size).toBe(0)
     expect(view.observer.disconnect).toHaveBeenCalledOnce()

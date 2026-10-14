@@ -30,6 +30,7 @@ export function registerSshIpc(storage: StorageService, ssh: SshService): void {
     ssh.resize(sessionId, cols, rows)
     return { ok: true }
   })
+  handleIpc('ssh:exec', (_event, sessionId: string, command: string) => ssh.exec(sessionId, command))
   handleIpc('ssh:statusOverview', (_event, sessionId: string) => ssh.status(sessionId))
   handleIpc('ssh:codexStatus', (_event, sessionId: string) => ssh.codexStatus(sessionId))
   handleIpc('ssh:disconnect', (_event, sessionId: string) => {

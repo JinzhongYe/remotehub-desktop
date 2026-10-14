@@ -1,6 +1,14 @@
 export type DatabaseAdapterType = 'mysql' | 'postgres' | 'sqlite'
 export type DatabaseObjectType = 'table' | 'view'
 export type DatabaseCell = string | number | boolean | null
+export type DatabaseSchemaSection = 'indexes' | 'foreignKeys' | 'checks' | 'triggers' | 'advanced'
+
+export interface DatabaseTableDetails {
+  columns: string[]
+  rows: DatabaseCell[][]
+  hasMore: boolean
+  notice?: string
+}
 
 export interface DatabaseConnectResult {
   sessionId: string
@@ -50,7 +58,14 @@ export interface DatabaseQueryRequest {
   restart?: boolean
 }
 
+export interface DatabaseChangesRequest {
+  database: string
+  table: string
+  statements: string[]
+}
+
 export interface DatabaseQueryResult {
+  truncated?: boolean
   kind: 'rows' | 'mutation'
   columns: DatabaseResultColumn[]
   rows: DatabaseCell[][]
@@ -80,6 +95,19 @@ export interface DatabaseCellDetail {
 export const DATABASE_PAGE_SIZE = 200
 export const DATABASE_MAX_PAGE_SIZE = 500
 export const DATABASE_MAX_SQL_LENGTH = 1024 * 1024
+
+export function normalizeChangesRequest(request: DatabaseChangesRequest): DatabaseChangesRequest {
+  if (!request || typeof request !== 'object' || ![request.database, request.table].every((name) => typeof name === 'string' && name.length > 0 && name.length <= 200 && !/[\0\r\n]/.test(name))
+    || !Array.isArray(request.statements) || !request.statements.length || request.statements.length > 5000) {
+    throw databaseInputError('DATABASE_CHANGES_INVALID', 'Table changes are invalid')
+  }
+  const statements = request.statements.map((sql) => {
+    if (typeof sql !== 'string' || !['INSERT', 'UPDATE', 'DELETE'].includes(databaseStatement(sql))) throw databaseInputError('DATABASE_CHANGES_INVALID', 'Table changes must contain INSERT, UPDATE or DELETE statements')
+    return normalizeQueryRequest({ sql }).sql
+  })
+  if (statements.reduce((bytes, sql) => bytes + new TextEncoder().encode(sql).length, 0) > DATABASE_MAX_SQL_LENGTH) throw databaseInputError('DATABASE_CHANGES_INVALID', 'Table changes are limited to 1 MB')
+  return { database: request.database, table: request.table, statements }
+}
 
 export function databaseDisplayRows(rows: DatabaseCell[][], filter = '', sortColumn = -1, direction: 'asc' | 'desc' = 'asc'): DatabaseCell[][] {
   const needle = filter.trim().toLocaleLowerCase()

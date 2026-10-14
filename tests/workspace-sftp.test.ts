@@ -70,7 +70,7 @@ describe('independent per-tab SFTP layout', () => {
     workspace.restore(['server'], JSON.stringify({ tabs: [
       { id: 'server:1', title: 'Legacy', type: 'terminal', connectionId: 'server' },
       { id: 'server:2', title: 'Invalid', type: 'terminal', connectionId: 'server', sftpOpen: 'true', sftpPosition: 'sideways' }
-    ] }))
+    ] }), { sftpOpen: storage.get('remotehub.sftpOpen'), sftpPosition: storage.get('remotehub.sftpPosition') })
     expect(workspace.tabs[1]).toMatchObject({ sftpOpen: false, sftpPosition: 'left' })
     expect(workspace.tabs[2]).toMatchObject({ sftpOpen: false, sftpPosition: 'bottom' })
     workspace.toggleSftp('server:1')
@@ -94,6 +94,15 @@ describe('independent per-tab SFTP layout', () => {
     workspace.toggleSftp('welcome')
     expect(workspace.activeTab.sftpOpen).toBeUndefined()
     expect(workspace.tabs[0].sftpOpen).toBeUndefined()
+    workspace.$dispose()
+  })
+
+  it('accepts an explicit initial SFTP view without changing the desktop default', () => {
+    const workspace = useWorkspaceStore()
+    workspace.openConnection('terminal', 'Terminal', 'terminal', { sftpOpen: false })
+    workspace.openConnection('files', 'Files', 'terminal', { sftpOpen: true })
+    workspace.openConnection('desktop-default', 'Desktop', 'terminal')
+    expect(workspace.tabs.filter(tab => tab.closable).map(tab => tab.sftpOpen)).toEqual([false, true, true])
     workspace.$dispose()
   })
 })

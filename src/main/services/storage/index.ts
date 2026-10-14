@@ -344,7 +344,7 @@ function normalizeConnection(input: ConnectionInput): Omit<Connection, 'id' | 'c
     authType: type === 'serial' || type === 'shell' ? undefined : input.authType === 'privateKey' ? 'privateKey' : input.authType === 'password' ? 'password' : type === 'ssh' && input.authType === 'none' ? 'none' : undefined,
     databaseType: type === 'database' && ['mysql', 'postgres', 'sqlite'].includes(input.databaseType || '') ? input.databaseType : undefined,
     database: type === 'database' ? String(input.database || '').trim().slice(0, 200) || undefined : undefined,
-    databaseSslMode: type === 'database' && input.databaseType === 'postgres' && ['disable', 'require', 'verify-full'].includes(input.databaseSslMode || '') ? input.databaseSslMode : undefined,
+    databaseSslMode: type === 'database' && (input.databaseType === 'postgres' || input.databaseType === 'mysql') && ['disable', 'require', 'verify-full'].includes(input.databaseSslMode || '') ? input.databaseSslMode : undefined,
     sshTunnelId: type === 'database' && input.databaseType === 'postgres' ? String(input.sshTunnelId || '').trim().slice(0, 100) || undefined : undefined,
     credentialId: type === 'serial' || type === 'shell' || (type === 'database' && input.databaseType === 'sqlite') ? undefined : String(input.credentialId || '').trim().slice(0, 160) || undefined,
     groupId: String(input.groupId || '').trim().slice(0, 100) || undefined,

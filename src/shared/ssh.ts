@@ -20,6 +20,35 @@ export interface SshStatusEvent {
   code?: string
 }
 
+export interface SshExecResult {
+  stdout: string
+  stderr: string
+  exitCode: number
+}
+
+export const SERVER_STATUS_COMMAND = String.raw`
+export LC_ALL=C
+printf 'user\t%s\n' "$(id -un 2>/dev/null)"
+printf 'host\t%s\n' "$(hostname -f 2>/dev/null || hostname 2>/dev/null)"
+if [ -r /etc/os-release ]; then . /etc/os-release; printf 'os\t%s\n' "$PRETTY_NAME"; else printf 'os\t%s\n' "$(uname -s 2>/dev/null)"; fi
+printf 'kernel\t%s\n' "$(uname -sr 2>/dev/null)"
+awk 'NR==1 {printf "uptime_seconds\t%.0f\n", $1}' /proc/uptime 2>/dev/null
+printf 'cpu_cores\t%s\n' "$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf 0)"
+printf 'load_average\t%s\n' "$(cut -d ' ' -f 1-3 /proc/loadavg 2>/dev/null)"
+if [ -r /proc/stat ]; then
+  read _ u1 n1 s1 i1 w1 q1 z1 t1 _ < /proc/stat
+  total1=$((u1+n1+s1+i1+w1+q1+z1+t1)); idle1=$((i1+w1)); sleep 0.2
+  read _ u2 n2 s2 i2 w2 q2 z2 t2 _ < /proc/stat
+  total2=$((u2+n2+s2+i2+w2+q2+z2+t2)); idle2=$((i2+w2))
+  awk -v ticks="$((total2-total1))" -v idle_ticks="$((idle2-idle1))" 'BEGIN {value=0; if (ticks>0) value=(ticks-idle_ticks)*100/ticks; printf "cpu_percent\t%.1f\n", value}'
+fi
+awk '/^MemTotal:/ {mt=$2} /^MemAvailable:/ {ma=$2} /^SwapTotal:/ {st=$2} /^SwapFree:/ {sf=$2} END {printf "memory_total_kb\t%.0f\nmemory_used_kb\t%.0f\nswap_total_kb\t%.0f\nswap_used_kb\t%.0f\n", mt, mt-ma, st, st-sf}' /proc/meminfo 2>/dev/null
+df -Pk / 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); printf "disk_total_kb\t%s\ndisk_used_kb\t%s\ndisk_percent\t%s\n", $2, $3, $5}'
+awk -F: 'NR>2 {gsub(/ /, "", $1); if ($1 != "lo") {gsub(/^ +/, "", $2); split($2, v, / +/); rx+=v[1]; tx+=v[9]}} END {printf "network_rx_bytes\t%.0f\nnetwork_tx_bytes\t%.0f\n", rx, tx}' /proc/net/dev 2>/dev/null
+printf 'process_count\t%s\n' "$(ps -e --no-headers 2>/dev/null | wc -l)"
+ps -eo pid=,pcpu=,rss=,comm= --sort=-pcpu 2>/dev/null | head -n 6 | awk '{printf "process\t%s|%s|%s|%s\n", $1, $2, $3, $4}'
+`.trim()
+
 export interface ServerProcess {
   pid: number
   cpuPercent: number

@@ -1,7 +1,7 @@
 import { dialog } from 'electron'
 import { handleIpc } from './security'
 import { writeFileSync } from 'node:fs'
-import type { DatabaseCsvExport, DatabaseQueryRequest } from '../../shared/database'
+import type { DatabaseChangesRequest, DatabaseCsvExport, DatabaseQueryRequest, DatabaseSchemaSection } from '../../shared/database'
 import { databaseResultToCsv } from '../../shared/database'
 import type { DatabaseService } from '../services/database'
 import type { StorageService } from '../services/storage'
@@ -18,7 +18,9 @@ export function registerDatabaseIpc(storage: StorageService, database: DatabaseS
   handleIpc('database:useDatabase', (_event, sessionId: string, name: string) => database.useDatabase(sessionId, name))
   handleIpc('database:listTables', (_event, sessionId: string, name: string) => database.listTables(sessionId, name))
   handleIpc('database:listColumns', (_event, sessionId: string, name: string, table: string) => database.listColumns(sessionId, name, table))
+  handleIpc('database:listTableDetails', (_event, sessionId: string, name: string, table: string, section: DatabaseSchemaSection) => database.listTableDetails(sessionId, name, table, section))
   handleIpc('database:query', (_event, sessionId: string, request: DatabaseQueryRequest) => database.query(sessionId, request))
+  handleIpc('database:applyChanges', (_event, sessionId: string, request: DatabaseChangesRequest) => database.applyChanges(sessionId, request))
   handleIpc('database:exportCsv', async (_event, request: DatabaseCsvExport) => {
     const csv = databaseResultToCsv(request)
     if (csv.length > 10 * 1024 * 1024) throw appError('DATABASE_EXPORT_TOO_LARGE', 'CSV export is limited to 10 MB')

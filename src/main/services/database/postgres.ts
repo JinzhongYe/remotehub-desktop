@@ -3,6 +3,9 @@ import type { Duplex } from 'node:stream'
 import { Client, type FieldDef, type QueryArrayResult } from 'pg'
 import type { DatabaseCatalog, DatabaseColumn, DatabaseQueryRequest, DatabaseQueryResult, DatabaseResultColumn, DatabaseTable } from '../../../shared/database'
 import { databaseStatement, isPageableStatement, normalizeQueryRequest } from '../../../shared/database'
+import type { DatabaseChangesRequest } from '../../../shared/database'
+import type { DatabaseSchemaSection, DatabaseTableDetails } from '../../../shared/database'
+import { databaseSchemaQuery } from '../../../shared/database-schema'
 import type { Connection, DatabaseSslMode } from '../../../shared/types'
 import { fingerprintHostKey } from '../host-key'
 import type { DatabaseAdapter, DatabaseAdapterFactory, DatabaseStatusEvent, DatabaseTunnel } from './adapter'
@@ -46,6 +49,7 @@ export class PostgresAdapter implements DatabaseAdapter {
   private transactionStatus: 'I' | 'T' | 'E' = 'I'
   private readonly lifecycle = new DatabaseLifecycle()
   private closed = false
+  private transactionOpen = false
 
   constructor(private client: Client, public database: string, public readonly serverVersion: string, private tunnel?: TunnelHandle, private readonly reconnect?: (database: string) => Promise<PostgresHandle>) {
     this.watchClient(client)
@@ -79,6 +83,7 @@ export class PostgresAdapter implements DatabaseAdapter {
       const previousClient = this.client
       const previousTunnel = this.tunnel
       this.client = next.client
+      this.transactionOpen = false
       this.tunnel = next.tunnel
       this.database = next.database
       this.transactionStatus = 'I'
@@ -137,12 +142,22 @@ export class PostgresAdapter implements DatabaseAdapter {
     } catch (error) { throw mapPostgresError(error) }
   }
 
+  async listTableDetails(database: string, table: string, section: DatabaseSchemaSection): Promise<DatabaseTableDetails> {
+    const query = databaseSchemaQuery(this.type, database, table, section)
+    try {
+      // Do not close or replace the SQL editor's paging cursor (or commit its transaction).
+      const result = await this.client.query({ text: query.sql, values: query.values, rowMode: 'array' }) as QueryArrayResult<unknown[]>
+      return { columns: query.columns, rows: result.rows.slice(0, 5000).map((row) => row.map(serializeDatabaseValue)), hasMore: result.rows.length > 5000, notice: query.notice }
+    } catch (error) { throw mapPostgresError(error) }
+  }
+
   async query(input: DatabaseQueryRequest): Promise<DatabaseQueryResult> {
     const request = normalizeQueryRequest(input)
     const startedAt = Date.now()
     const statement = databaseStatement(request.sql)
     try {
-      if (isPageableStatement(request.sql)) {
+      // Manual transactions must not use a pagination cursor that commits on close.
+      if (isPageableStatement(request.sql) && !this.transactionOpen) {
         const source = stripFinalSemicolon(request.sql)
         if (request.restart || !this.cursorOpen || this.cursorSql !== source) await this.openCursor(source)
         const commands = buildPostgresCursorCommands(request.page, request.pageSize)
@@ -153,7 +168,13 @@ export class PostgresAdapter implements DatabaseAdapter {
       }
 
       await this.closeCursor()
+      // A failed multi-statement BEGIN can still leave the connection in a transaction.
+      if (statement === 'BEGIN' || statement === 'START') this.transactionOpen = true
       const result = await this.client.query({ text: stripFinalSemicolon(request.sql), rowMode: 'array' }) as QueryArrayResult<unknown[]> | QueryArrayResult<unknown[]>[]
+      for (const completed of Array.isArray(result) ? result : [result]) {
+        if (completed.command === 'BEGIN') this.transactionOpen = true
+        else if (completed.command === 'COMMIT' || (completed.command === 'ROLLBACK' && !/\bTO\b/i.test(request.sql))) this.transactionOpen = /\bAND\s+CHAIN\b/i.test(request.sql)
+      }
       const last = Array.isArray(result) ? result.at(-1)! : result
       if (last.fields.length) return rowResult(last, last.rows, 0, request.pageSize, false, statement, startedAt)
       return {
@@ -168,6 +189,33 @@ export class PostgresAdapter implements DatabaseAdapter {
         this.cursorSql = ''
         this.cursorOwnsTransaction = false
         if (ownsTransaction) await this.client.query('ROLLBACK').catch(() => undefined)
+      }
+      throw mapPostgresError(error)
+    }
+  }
+
+  async applyChanges(request: DatabaseChangesRequest): Promise<void> {
+    if (this.transactionOpen) throw databaseError('DATABASE_TRANSACTION_ACTIVE', 'Commit or roll back the SQL editor transaction before saving table changes')
+    await this.closeCursor()
+    let started = false
+    let committing = false
+    try {
+      await this.client.query('BEGIN')
+      started = true
+      for (const text of request.statements) {
+        const query = { text, queryMode: 'extended' }
+        await this.client.query(query)
+      }
+      committing = true
+      await this.client.query('COMMIT')
+    } catch (error) {
+      if (committing) {
+        this.close()
+        throw databaseError('DATABASE_TRANSACTION_COMMIT_FAILED', 'Commit failed; check the saved data before reconnecting and retrying')
+      }
+      if (started) {
+        try { await this.client.query('ROLLBACK') }
+        catch { this.close() }
       }
       throw mapPostgresError(error)
     }
