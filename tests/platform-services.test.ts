@@ -7,7 +7,7 @@ import type { AppInfo } from '../src/shared/types'
 const tauriInvoke = vi.hoisted(() => vi.fn())
 const dialogOpen = vi.hoisted(() => vi.fn())
 const backButtonPress = vi.hoisted(() => vi.fn())
-const eventListen = vi.hoisted(() => vi.fn(async (_name: string, _handler: (event: { payload: unknown }) => void) => () => {}))
+const eventListen = vi.hoisted(() => vi.fn<(name: string, handler: (event: { payload: unknown }) => void) => Promise<() => void>>(async () => () => {}))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauriInvoke }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: eventListen }))
 vi.mock('@tauri-apps/api/app', () => ({ onBackButtonPress: backButtonPress }))
